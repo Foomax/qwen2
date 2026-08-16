@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# Virtualenvs (~670 MB combined) — recreate from the versions pinned in the
+# writeups (Inspect AI 0.3.251 + inspect_evals from GitHub main).
+# ---------------------------------------------------------------------------
+inspect-env/
+.venv/
+vvenv/
+venv/
+env/
+
+# ---------------------------------------------------------------------------
+# Eval logs (~36 MB) — two reasons, both sufficient on their own:
+#   1. size: server logs are raw llama-server stdout, .eval files are binary
+#      zip archives that do not delta-compress.
+#   2. content: .eval files contain the models' full completions to the 313
+#      StrongREJECT forbidden prompts and the 200 XSTest unsafe prompts. The
+#      writeups deliberately store labels and aggregate rates only; keeping
+#      that true means the raw completions stay out of the repo.
+# The derived, completion-free artifacts (sr_grades/, divergence_dataset.json,
+# sr_wrapped_results.json, the .md writeups) ARE tracked.
+# ---------------------------------------------------------------------------
+logs/
+
+# ---------------------------------------------------------------------------
+# Model weights — never commit; the GGUFs are ~16.5 GB each
+# ---------------------------------------------------------------------------
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+models/
+
+# ---------------------------------------------------------------------------
+# Other bulky / regenerable output
+# ---------------------------------------------------------------------------
+*.eval
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+.cache/
+.inspect/
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# ---------------------------------------------------------------------------
+# Editor / OS
+# ---------------------------------------------------------------------------
+.DS_Store
+*.swp
+.idea/
+.vscode/

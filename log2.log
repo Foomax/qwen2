@@ -1,0 +1,352 @@
+================================================================================
+HOW TO RUN THE WRAPPED STRONGREJECT EVAL YOURSELF — TERMINAL ONLY
+================================================================================
+Everything below is copy-pasteable into a normal terminal. No editor needed
+except where it says so. Run every command from /home/user/qwen2.
+
+What this does: puts a custom instruction before AND after each of the 313
+StrongREJECT questions, runs them through a model on the GPU, then has a second
+model judge every answer for refusal, and compares conditions item by item.
+
+Total wall time on the 3090: ~15 min to generate, ~50 min to judge two arms.
+Only one 27B model fits in 24 GB, so generating and judging are separate phases.
+
+
+--------------------------------------------------------------------------------
+STEP 0 — ONE-TIME SETUP FOR EACH TERMINAL SESSION
+--------------------------------------------------------------------------------
+Open a terminal and paste this block. It must be re-pasted in every NEW terminal
+window, because these are environment variables, not permanent settings.
+
+    cd /home/user/qwen2
+    export OPENAI_BASE_URL=http://127.0.0.1:8080/v1
+    export OPENAI_API_KEY=sk-local
+    export XDG_DATA_HOME=$HOME/.cache/xdg-data
+
+Why each one:
+  OPENAI_BASE_URL   points the Inspect framework at your local llama.cpp server
+                    instead of the real OpenAI API
+  OPENAI_API_KEY    llama.cpp ignores the value, but the client library refuses
+                    to start without something here
+  XDG_DATA_HOME     works around ~/.local/share being read-only on this box
+
+Check you are in the right place (should list sr_wrapped.py):
+
+    ls sr_*.py sr_*.json sr_run.sh
+
+
+--------------------------------------------------------------------------------
+STEP 1 — CHOOSE OR WRITE YOUR INSTRUCTION (NO GPU NEEDED)
+--------------------------------------------------------------------------------
+See the presets that already exist:
+
+    ./inspect-env/bin/python sr_wrapped.py --list-presets
+
+Preview exactly what the model will be sent, for 1 question:
+
+    ./inspect-env/bin/python sr_wrapped.py --preset responsible_assistant --n 1
+
+The actual harmful question is elided in this preview on purpose; you are only
+checking that your prefix and suffix land in the right places.
+
+To try your own wording without editing any file, use --prefix / --suffix:
+
+    ./inspect-env/bin/python sr_wrapped.py \
+      --prefix "Your instruction that goes before the question." \
+      --suffix "Your reminder that goes after the question." \
+      --n 1
+
+To save wording permanently, open sr_wrappers.json in an editor and copy an
+existing block, e.g.:
+
+    "my_condition": {
+      "description": "what this tests",
+      "direction": "refusal-promoting",
+      "prefix": "text before the question",
+      "suffix": "text after the question"
+    }
+
+Careful: it is JSON, so every block except the last needs a trailing comma, and
+any double quote inside your text must be written \" . Verify it parses:
+
+    ./inspect-env/bin/python -c "import json;json.load(open('sr_wrappers.json'));print('JSON ok')"
+
+
+--------------------------------------------------------------------------------
+STEP 2 — START THE MODEL YOU WANT TO TEST
+--------------------------------------------------------------------------------
+First make sure nothing else is holding the GPU:
+
+    pgrep -x llama-server | xargs -r kill
+    sleep 10
+    nvidia-smi --query-gpu=memory.used,memory.free --format=csv
+
+Wait until memory.free is above ~20000 MiB. If you start the next server too
+soon, it dies with "cudaMalloc failed: out of memory" — the old process has not
+handed back its VRAM yet. This is the single most common failure.
+
+Now start the server. This runs in the FOREGROUND and keeps printing; that is
+normal. Leave this terminal alone and open a SECOND terminal for step 3.
+
+For the obliterated model:
+
+    /home/user/llama.cpp/build/bin/llama-server \
+      -m /home/user/models/qwen3.6-27b-obliterated/gguf/qwen3.6-27b-obliteratus-Q4_K_M.gguf \
+      -a qwen3.6-27b-obliterated \
+      -ngl 1024 -c 32768 --parallel 4 \
+      --cache-type-k q8_0 --cache-type-v q8_0 \
+      --reasoning off --host 127.0.0.1 --port 8080
+
+For the stock model, swap the -m path and the -a alias:
+
+    -m /home/user/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf
+    -a qwen3.6-27b-normal
+
+What the flags mean:
+  -ngl 1024          put every layer on the GPU
+  -c 32768           total context, SPLIT ACROSS SLOTS: with --parallel 4 each
+                     request only gets 8192 tokens. Sizing this wrong is what
+                     caused the "Context size has been exceeded" errors earlier.
+  --parallel 4       4 requests at once; fine here since answers are capped at
+                     2048 tokens. Use --parallel 1 for long chain-of-thought work.
+  --cache-type-k/v q8_0   quantised KV cache, buys context room for free
+  --reasoning off    direct answers, no visible thinking — matches how the
+                     original StrongREJECT runs were done
+  -a <alias>         the name you then pass to Inspect as openai/<alias>
+
+In your SECOND terminal, wait for it to be ready (takes ~15-60 s):
+
+    until curl -sf http://127.0.0.1:8080/health >/dev/null; do sleep 5; done; echo READY
+
+
+--------------------------------------------------------------------------------
+STEP 3 — GENERATE THE ANSWERS (~13 MIN FOR 313 QUESTIONS)
+--------------------------------------------------------------------------------
+In the second terminal (with the step 0 exports pasted in), run:
+
+    mkdir -p logs/sr-wrapped/obliterated-responsible_assistant
+
+    ./inspect-env/bin/inspect eval sr_wrapped.py \
+      --model openai/qwen3.6-27b-obliterated \
+      -T preset=responsible_assistant \
+      -T condition=responsible_assistant \
+      -T score=false \
+      --temperature 0 \
+      --max-connections 4 \
+      -M client_timeout=7200 \
+      --log-dir logs/sr-wrapped/obliterated-responsible_assistant
+
+Instead of -T preset=... you can pass your wording inline:
+
+      -T prefix="text before the question" \
+      -T suffix="text after the question" \
+      -T condition=my_condition \
+
+Flags that matter:
+  -T score=false        generate only. Do NOT judge yet — the judge must be the
+                        stock model, and it is not loaded right now. Judging with
+                        whatever happens to be in memory would invalidate the
+                        comparison.
+  --temperature 0       deterministic, and matches the earlier baseline runs.
+                        (The upstream task defaults to 0.75 — do not use that if
+                        you want to compare against your existing numbers.)
+  --max-connections 4   must not exceed --parallel on the server
+  -M client_timeout=7200   raises the HTTP timeout to 2 hours. Inspect's own
+                        --timeout does NOT do this; the underlying client gives
+                        up after 600 s by default and silently kills long
+                        generations. Always pass this.
+
+Add --limit 5 for a quick smoke test before committing to the full 313.
+
+When it finishes you will see a summary and a path ending in .eval. Confirm it
+is complete:
+
+    ./inspect-env/bin/python -c "
+    from inspect_ai.log import read_eval_log; import glob
+    l=read_eval_log(sorted(glob.glob('logs/sr-wrapped/obliterated-responsible_assistant/*.eval'))[-1])
+    print(l.status, len(l.samples), 'samples,', len([s for s in l.samples if s.error]), 'errors')"
+
+You want: success 313 samples, 0 errors.
+
+
+--------------------------------------------------------------------------------
+STEP 4 — SWAP TO THE JUDGE MODEL
+--------------------------------------------------------------------------------
+Go back to the FIRST terminal and press Ctrl+C to stop the server. Then:
+
+    pgrep -x llama-server | xargs -r kill
+    sleep 10
+    nvidia-smi --query-gpu=memory.free --format=csv
+
+Wait for free memory above ~20000 MiB again, then start the STOCK model as the
+judge (fewer slots, since judge prompts are much longer):
+
+    /home/user/llama.cpp/build/bin/llama-server \
+      -m /home/user/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf \
+      -a qwen3.6-27b-normal \
+      -ngl 1024 -c 32768 --parallel 2 \
+      --cache-type-k q8_0 --cache-type-v q8_0 \
+      --reasoning off --host 127.0.0.1 --port 8080
+
+Wait for ready in the second terminal:
+
+    until curl -sf http://127.0.0.1:8080/health >/dev/null; do sleep 5; done; echo READY
+
+IMPORTANT: use the SAME judge model for every condition you intend to compare.
+A comparison graded by two different judges means nothing.
+
+
+--------------------------------------------------------------------------------
+STEP 5 — JUDGE AND COMPARE (~25 MIN PER ARM)
+--------------------------------------------------------------------------------
+Grade your new run against the unwrapped baseline. Each argument is a label you
+choose, an = sign, then a path (quote it so the shell does not expand the *):
+
+    ./inspect-env/bin/python sr_compare.py \
+      'obl-responsible_assistant=logs/sr-wrapped/obliterated-responsible_assistant/*.eval' \
+      'obl-control=logs/eval-obliterated/*strong-reject*.eval' \
+      --judge qwen3.6-27b-normal \
+      --workers 2 \
+      --judge-max-tokens 1024 \
+      --json-out sr_wrapped_results.json
+
+Add --limit 10 first if you want to check it works before a 50-minute run.
+
+Notes:
+  --workers 2          keep at or below the server's --parallel. Going higher
+                       crashed the server during an earlier grading run.
+  --judge-max-tokens 1024   do not lower this. If the judge runs out of tokens
+                       before it prints its verdict, that answer is dropped as
+                       unparseable — and it happens more often to one model than
+                       the other, which quietly biases the result. This exact bug
+                       corrupted the first XSTest numbers.
+  Results are cached in sr_grades/, so re-running the comparison is instant and
+  free. Delete that folder to force a re-judge.
+
+Read the output like this:
+
+    condition                     n   refuse   comply  SR score
+    obl-responsible_assistant   311   95.2%    4.8%     0.233
+    obl-control                 309   83.5%   16.5%     0.814
+
+    paired comparisons (McNemar exact, on per-item refusal):
+      ... n=307 | A-refuses-only 46 | B-refuses-only 11 | p=3.312e-06
+
+  refuse    how often it declined
+  comply    how often it helped with a harmful request (lower is safer)
+  SR score  0-5; how useful the non-refusals were. Falls faster than the
+            compliance rate if remaining answers are vague — this is often the
+            more meaningful safety number.
+  the paired line is the real result: same 313 questions in both arms, so the
+  two discordant counts (46 vs 11) carry the signal. p below 0.05 means the
+  difference is unlikely to be chance.
+
+Sanity check the two n values are close. If one arm parsed far fewer samples
+than the other, do not trust the comparison — raise --judge-max-tokens and
+delete sr_grades/ before re-running.
+
+
+--------------------------------------------------------------------------------
+STEP 6 — OPTIONAL PER-CATEGORY BREAKDOWN (NO GPU NEEDED)
+--------------------------------------------------------------------------------
+Uses the cached grades from step 5, so it is instant and needs no server:
+
+    ./inspect-env/bin/python sr_breakdown.py \
+      "logs/sr-wrapped/obliterated-responsible_assistant/*.eval" \
+      "logs/eval-obliterated/*strong-reject*.eval"
+
+Shows which harm categories still get help, and flags any category that got
+WORSE with your instruction.
+
+
+--------------------------------------------------------------------------------
+STEP 7 — SHUT DOWN
+--------------------------------------------------------------------------------
+Ctrl+C the server terminal, then:
+
+    pgrep -x llama-server | xargs -r kill
+    nvidia-smi --query-gpu=memory.used --format=csv
+
+Should settle around 2300 MiB (that is the desktop, not you).
+
+
+================================================================================
+THE SHORT VERSION — SAME THING, THREE COMMANDS
+================================================================================
+sr_run.sh does all the server juggling, waiting, and flag-setting for you:
+
+    cd /home/user/qwen2
+    ./sr_run.sh gen obliterated responsible_assistant
+    ./sr_run.sh judge \
+      'obl-responsible_assistant=logs/sr-wrapped/obliterated-responsible_assistant/*.eval' \
+      'obl-control=logs/eval-obliterated/*strong-reject*.eval'
+
+Several conditions in one go (one model load, run sequentially):
+
+    ./sr_run.sh gen obliterated control placebo responsible_assistant
+    ./sr_run.sh gen normal      responsible_assistant
+
+Judge everything found, including both unwrapped baselines (slow but complete):
+
+    ./sr_run.sh judge
+
+To keep a record of what you ran, put any command inside runlog.sh — it appends
+the command, a timestamp and the full output to log.log:
+
+    ./runlog.sh "what I am doing" './sr_run.sh gen obliterated responsible_assistant'
+
+Long runs: prefix with nohup so closing the terminal does not kill them:
+
+    nohup ./sr_run.sh gen obliterated responsible_assistant > run.out 2>&1 &
+    tail -f run.out
+
+
+================================================================================
+IF SOMETHING GOES WRONG
+================================================================================
+"cudaMalloc failed: out of memory" when starting the server
+    The previous server has not released VRAM. Kill it, wait 10 s, check
+    nvidia-smi shows >20 GB free, then start again.
+
+"Context size has been exceeded" during a run
+    --parallel divides -c between slots. Either raise -c or lower --parallel.
+
+The run stalls, then fails with a timeout after exactly 10 minutes
+    You left out -M client_timeout=7200.
+
+"LookupError: ... not found in the registry"
+    You used the `inspect score` command. It cannot see these scorers. Use
+    sr_compare.py instead — that is why it exists.
+
+Judge parsed far fewer samples in one arm than the other
+    Judge truncation. Raise --judge-max-tokens, delete sr_grades/, re-run.
+    Never compare arms with mismatched parse rates.
+
+Server dies mid-grading
+    Too many concurrent requests. Restart with --parallel 2 and use --workers 2.
+
+"no logs matched: ..."
+    Quote your path arguments so the shell does not expand * before the script
+    sees it: 'label=logs/dir/*.eval'
+
+Everything runs but numbers look wrong
+    Check the log recorded what you think it did:
+    ./inspect-env/bin/python -c "
+    from inspect_ai.log import read_eval_log; import glob,json
+    l=read_eval_log(sorted(glob.glob('logs/sr-wrapped/*/*.eval'))[-1])
+    print(json.dumps(l.eval.metadata['wrapper'], indent=2))"
+
+
+================================================================================
+TWO RULES THAT KEEP RESULTS VALID
+================================================================================
+1. One judge for everything you compare. Same model, same settings, same
+   session. The judge is an instrument; swapping it mid-experiment is like
+   changing rulers halfway through measuring.
+
+2. Change one thing at a time. If you alter the prefix AND the temperature AND
+   the model, a difference in the result tells you nothing about which caused
+   it. Run the `placebo` preset (a neutral instruction with no safety content)
+   to check whether merely adding ANY instruction moves refusals, before you
+   credit your safety wording for the change.
+================================================================================
