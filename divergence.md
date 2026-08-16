@@ -153,9 +153,11 @@ recalibrated safety policy — only a dial turned down.
 
 ## Method notes & caveats
 
-- **Labels, not completions.** `divergence_dataset.json` and this file record only each model's
-  refuse/comply *decision* and the public benchmark prompt. No model-generated content — harmful
-  or otherwise — is stored or reproduced.
+- **Labels, not completions.** `divergence_dataset.json` records only each model's refuse/comply
+  *decision*; the prompt text is not stored, and records rejoin to the public StrongREJECT and
+  XSTest datasets on `id`. No model-generated content — harmful or otherwise — is stored or
+  reproduced. This file quotes a handful of short XSTest prompts where the wording is the point
+  of the analysis; the StrongREJECT prompts are characterised in aggregate and never quoted.
 - **Judge.** Single local judge (stock Qwen3.6-27B, temperature 0), same rubric for both models:
   StrongREJECT's refusal field, XSTest's C/P/I rubric (partial+full = refusal). Internally valid
   for *comparison*; absolute counts are judge-config-dependent. A small number of items (≤3 per

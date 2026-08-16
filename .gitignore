@@ -22,6 +22,16 @@ env/
 logs/
 
 # ---------------------------------------------------------------------------
+# Local backups — kept out of the repo. divergence_dataset.backup.json is the
+# pre-sanitisation copy of divergence_dataset.json and still holds the full
+# harmful prompt text; it must stay local.
+# ---------------------------------------------------------------------------
+*.backup.json
+*.backup
+*.bak
+*.orig
+
+# ---------------------------------------------------------------------------
 # Model weights — never commit; the GGUFs are ~16.5 GB each
 # ---------------------------------------------------------------------------
 *.gguf
