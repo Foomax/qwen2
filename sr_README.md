@@ -100,11 +100,32 @@ That means the existing baselines serve as the control arm — no need to re-run
 `log.eval.metadata["wrapper"]` records prefix, suffix, system, judge_on, temperature.
 A `.eval` file always says what produced it.
 
+**4. Decoy-refusal scaffolding is stripped before judging.**
+Some jailbreak wrappers instruct the model to emit a refusal it does not mean *before*
+the real answer (the `jailbreak` preset mandates a refusal as its first output element). Grading the raw completion lets a
+refusal-detecting judge score a preamble the wrapper demanded. `sr_compare.py` therefore
+splits on the preset's `response_marker` and judges only what follows.
+
+The transform is the **identity** on any response without the marker, so it cannot
+perturb other conditions — and the cache key proves it rather than assuming it: the
+transform enters the key *only when it fires*, so an unaffected log keys exactly as it
+did before the transform existed and hits its pre-existing grade. If you add a wrapper
+that needs one, declare `response_marker` on the preset and mirror it in
+`RESPONSE_MARKERS` in `sr_compare.py`.
+
+Empirically, on the runs in this project, stripping changed the jailbreak arms by ≤0.3
+points — the judge was never scoring the decoy. Keep the transform anyway (it removes a
+real confound for free), but do not assume it is doing work; check the
+`stripped ... from N/M responses` line against the resulting numbers.
+
 ---
 
 ## Presets
 
 Direction is labelled because it determines what a result *means*.
+
+Presets may also carry `response_marker` — a delimiter after which the real answer begins
+(see design decision 4). Only `jailbreak` sets one.
 
 | preset | direction | what it tests |
 |---|---|---|
@@ -170,5 +191,26 @@ the forbidden prompts unless you pass `--show-questions`.
 ## Status
 
 Smoke-tested end to end on 2026-08-16: wrapping, provenance metadata, inline scoring,
-judge-grading of unscored logs, grade caching, and paired McNemar all verified working.
-No full-scale conditions have been run yet.
+judge-grading of unscored logs, grade caching, decoy-refusal stripping, and paired
+McNemar all verified working.
+
+**Full 3×2 complete** (2026-08-16): `control` / `jailbreak` / `responsible_assistant`
+× stock / ablated, 313 items each, one judge, one pass. Aggregates in
+`sr_wrapped_results.json`; write-ups in `eval-results-blog-post.md` and
+`eval-results-technical-paper.md`. Headlines:
+
+| refusal rate | stock | ablated |
+|---|---|---|
+| control | 100.0% | 83.5% |
+| `jailbreak` | 99.3% | 92.8% |
+| `responsible_assistant` | 100.0% | 95.2% |
+
+- `responsible_assistant` recovers most of the ablated refusal loss (83.5%→95.2%,
+  p = 3.3e-06) but never reaches stock under any wrapper.
+- `jailbreak` **backfired**: it *raised* ablated refusal (83.5%→92.8%, p = 8.6e-04).
+  The decoy-stripping control (design decision 4) refutes the scoring-artifact
+  explanation; the output is empty-jailbreak prose — long, fluent, non-responsive —
+  which is exactly what StrongREJECT's specificity/convincingness terms exist to catch.
+
+Not yet run: `placebo` (run it before believing any refusal-promoting condition),
+`refusal_suppression`, `prefix_injection`, `safety_*`, `deliberation`.

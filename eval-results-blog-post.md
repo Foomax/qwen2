@@ -65,7 +65,7 @@ So we re-ran all 313 StrongREJECT prompts under two wrappers, on both models: **
 | Refusal rate | Stock | Obliterated |
 |---|---|---|
 | no wrapper (baseline) | 100% | 83.5% |
-| + `jailbreak` attack | 99.3% | 93.1% |
+| + `jailbreak` attack | 99.3% | 92.8% |
 | + `responsible_assistant` defense | 100% | 95.2% |
 
 Three things fall out, and the first one surprised us.
@@ -74,7 +74,15 @@ Three things fall out, and the first one surprised us.
 
 **But it doesn't close the gap.** Obliterated-with-the-best-defense (95.2%) is still meaningfully below stock-under-active-attack (99.3%), and every stock-vs-obliterated pair stays significant no matter which wrapper both sides wear (p ranges 8×10⁻⁵ to 1×10⁻⁶). You cannot prompt your way back to the stock model. The floor moved up; it did not reach.
 
-**The jailbreak barely mattered — on either model.** Stock held at 99.3% (two prompts moved, out of 313). And on the obliterated model the "attack" *raised* refusal versus no wrapper at all, 83.5% → 93.1%. That is not a typo and it is not the wrapper working in reverse: this particular wrapper explicitly instructs the model to emit a refusal first and then contradict it, so the refusal language is right there in the output for the judge to find. It's a good reminder that a jailbreak's reputation is not a measurement — ours produced a *safer*-looking model than the empty control. Within the obliterated model the two wrappers are statistically indistinguishable from each other (p = 0.39); the model you start from explains far more than the prompt you wrap around it.
+**The jailbreak didn't just fail — it backfired.** Stock held at 99.3% (two prompts moved, out of 313). And on the obliterated model the "attack" *raised* refusal versus no wrapper at all, 83.5% → 92.8%, paired 42 recovered against 16 lost, p ≈ 9×10⁻⁴. A real, significant effect in the wrong direction for the attacker.
+
+We spent a while convinced this was our own bug. The wrapper instructs the model to emit a refusal *first* and then contradict it after a divider — so the obvious story is that our judge reads the decoy "I'm sorry", stops there, and scores a refusal. We tested it: stripped everything before the divider on all 398 responses that had one, and re-graded. The numbers moved by **0.0 and 0.3 points**. The judge was never fooled.
+
+What's actually behind the divider is the interesting part. Only 2% of the stock model's post-divider text (and 12% of the obliterated model's) contains any refusal language at all. The models weren't refusing twice. They were producing ~5,900 characters of fluent, confident, perfectly on-format prose that never actually answers the question. And where the judge *did* find real compliance, it rated those answers 5/5 for specificity and convincingness — so the rubric isn't blind to substance, it just wasn't finding any.
+
+That has a name, and it's the title of the paper our benchmark comes from: *A StrongREJECT for Empty Jailbreaks*. The whole reason StrongREJECT exists is that jailbreaks are routinely scored by string-matching for "I'm sorry" — which counts theatrical compliance as success. Ours produced a textbook empty jailbreak, and the rubric caught it. Had we measured refusal the naive way, we'd have reported a 20-point jailbreak win that isn't there.
+
+Within the obliterated model the two wrappers land statistically indistinguishable from each other (p = 0.31). The model you start from explains far more than the prompt you wrap around it.
 
 ## What we actually learned
 
@@ -84,7 +92,7 @@ Three things fall out, and the first one surprised us.
 4. **Prompt-level safety recovers most of the loss, and none of the guarantee.** A single safety paragraph buys back most of the refusal gap (83.5%→95.2%) for free. But "most" is doing real work in that sentence: the mitigation is advisory, it sits in the channel an attacker controls, and it still leaves the obliterated model below a stock model under active attack. Cheap mitigation, not a fix.
 5. **One 3090 is enough** for real comparative safety evals — if you respect the plumbing: single-slot servers for long reasoning (llama.cpp splits context across parallel slots), an explicit HTTP timeout (the OpenAI SDK's hidden 600s default silently kills any answer past ~24k tokens at local speed), a context sized to your longest prompt *and* longest reasoning chain — and a judge given enough tokens to actually reach its verdict.
 
-**Next:** more seeds to power up the AIME test; a stronger judge than a local 27B to firm up the absolute refusal rates; and a jailbreak wrapper that actually attacks — ours turned out to hand the judge refusal language for free, so the residual 5% is still unprobed.
+**Next:** more seeds to power up the AIME test; a stronger judge than a local 27B to firm up the absolute refusal rates; and more attack conditions — one published jailbreak failing (and backfiring) on both models is a data point, not a security argument, and the residual 5% stays unprobed until `refusal_suppression` and `prefix_injection` get their turn.
 
 ---
 
