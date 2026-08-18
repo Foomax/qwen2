@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 from inspect_ai import Task, task
-from inspect_ai.dataset import Sample
+from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import (
     ChatMessageSystem,
     ChatMessageUser,
@@ -237,6 +237,7 @@ def strong_reject_wrapped(
     temperature: float = DEFAULT_TEMPERATURE,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     epochs: int = DEFAULT_EPOCHS,
+    subset_file: str = "",
 ) -> Task:
     """StrongREJECT with a custom instruction before and/or after each question.
 
@@ -255,6 +256,9 @@ def strong_reject_wrapped(
         temperature: 0 by default (upstream uses 0.75).
         max_tokens: generation cap for the model under test.
         epochs: repeats per sample.
+        subset_file: JSON file with a `sample_ids` list; restricts the run to
+            those items. Use one file across every condition so the arms stay
+            ID-aligned and paired tests remain valid on the reduced set.
     """
     cfg: dict[str, Any] = {}
     if preset:
@@ -277,6 +281,27 @@ def strong_reject_wrapped(
         sample_fields=_record_to_sample_factory(wrap, system=system),
     )
 
+    subset_meta: dict[str, Any] = {}
+    if subset_file:
+        with open(subset_file) as fh:
+            sub = json.load(fh)
+        wanted = set(sub["sample_ids"])
+        kept = [x for x in dataset if str(x.id) in wanted]
+        missing = wanted - {str(x.id) for x in kept}
+        if missing:
+            raise ValueError(
+                f"{subset_file}: {len(missing)} of {len(wanted)} sample_ids are not in "
+                f"the dataset (first: {sorted(missing)[:3]}). Refusing to run a partial "
+                "subset -- arms would not be ID-aligned."
+            )
+        dataset = MemoryDataset(kept, name=getattr(dataset, "name", None))
+        subset_meta = {
+            "file": os.path.basename(subset_file),
+            "n": len(kept),
+            "seed": sub.get("seed"),
+            "checksum": sub.get("checksum"),
+        }
+
     return Task(
         dataset=dataset,
         solver=[generate()],
@@ -295,6 +320,7 @@ def strong_reject_wrapped(
                 "template": template,
                 "system": system,
                 "sep": sep,
+                "subset": subset_meta or None,
                 "judge_on": judge_on,
                 "temperature": temperature,
                 "max_tokens": max_tokens,

@@ -34,6 +34,10 @@ model_path() {
 }
 
 stop_server() { pgrep -x llama-server | xargs -r kill 2>/dev/null || true; sleep 3; }
+# Release the GPU on interrupt/error too, not just the normal exit path. Without
+# this, `set -euo pipefail` skips the trailing stop_server when a phase fails and
+# the server survives holding ~20GB (this orphaned one for 3.5h on 2026-08-16).
+trap stop_server EXIT INT TERM
 
 start_server() { # path alias parallel ctx logfile
   local path=$1 alias=$2 par=$3 ctx=$4 logf=$5
@@ -98,8 +102,14 @@ case "${1:-}" in
 
     [ ${#RUNS[@]} -eq 0 ] && { echo "no logs found under $OUT" >&2; exit 1; }
     echo ">> grading ${#RUNS[@]} runs"
+    # --refusal-halt-frac 1.0 makes the halt condition unsatisfiable (n > 1.0*n) while
+    # keeping the counter and its warning. The halt exists for REMOTE judges that may
+    # decline en masse; this judge is local with --reasoning off and cannot hit the
+    # content_filter path, so here it is a tripwire whose only effect would be aborting
+    # AFTER generation has already spent the GPU. Warn, don't abort.
     $PY sr_compare.py "${RUNS[@]}" --judge qwen3.6-27b-normal --workers 2 \
-        --judge-max-tokens 1024 --json-out sr_wrapped_results.json
+        --judge-max-tokens 1024 --refusal-halt-frac 1.0 \
+        --json-out sr_wrapped_results.json
     stop_server
     ;;
 
