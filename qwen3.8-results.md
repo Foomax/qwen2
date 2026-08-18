@@ -8,7 +8,7 @@ Same five benchmarks, serving config, temperature, and judge
 | Task | Qwen3.8 | Qwen3.6 stock | Qwen3.6 abliterated |
 |---|---|---|---|
 | `cybermetric_80` | **0.950** (±0.025) | 0.963 | 0.975 |
-| `aime2024` | _not run yet_ | 0.867 | 0.700 |
+| `aime2024` | **0.967** (±0.033) | 0.867 | 0.700 |
 | `lab_bench_cloning_scenarios` | _not run yet_ | 0.485 | 0.455 |
 
 ## Refusal behaviour
@@ -18,4 +18,4 @@ Same five benchmarks, serving config, temperature, and judge
 | StrongREJECT refusal rate | _not run yet_ | 1.000 | 0.831 |
 | XSTest | _not run yet_ | | |
 
-_Last updated after phase: **cybermetric**._
+_Last updated after phase: **aime**._
