@@ -22,6 +22,15 @@ env/
 logs/
 
 # ---------------------------------------------------------------------------
+# Verbatim harmful queries — the concerning-result write-ups keep full query
+# text on this machine only. The committed companion (qwen3.8-concerning-ids.md)
+# carries sample IDs and categories, which rejoin to the public datasets.
+# ---------------------------------------------------------------------------
+*-concerning-local.md
+xstest/
+.q38_state/
+
+# ---------------------------------------------------------------------------
 # Local backups — kept out of the repo. divergence_dataset.backup.json is the
 # pre-sanitisation copy of divergence_dataset.json and still holds the full
 # harmful prompt text; it must stay local.
@@ -70,3 +79,6 @@ __pycache__/
 *.swp
 .idea/
 .vscode/
+
+# API keys / local env
+.env
