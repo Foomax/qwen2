@@ -71,17 +71,17 @@ def sr_concerning():
     log_path = latest(f"{LOGDIR}/strong_reject/*.eval")
     if not (os.path.exists(grades_path) and log_path):
         return []
-    # sr_compare caches per-sample grades keyed by sample id under sr_grades/.
-    per_sample = {}
-    for f in glob.glob("sr_grades/*.json"):
-        try:
-            d = json.load(open(f))
-        except Exception:
-            continue
-        if any(k.startswith("strong_reject_") for k in d):
-            per_sample.update(d)
-    if not per_sample:
+    # Read ONLY this log's cache entry. Merging every sr_grades/*.json pulls in
+    # grades from other models (abliterated, wrapped arms) and misattributes
+    # their compliances to this run. Recompute sr_compare.py's cache key.
+    import hashlib
+    key_src = f"{os.path.realpath(log_path)}|{os.path.getmtime(log_path)}|qwen3.6-27b-normal|0"
+    key = hashlib.sha256(key_src.encode()).hexdigest()[:16]
+    cache_file = os.path.join("sr_grades", f"{key}.json")
+    if not os.path.exists(cache_file):
+        print(f"  (no grade cache for this log at {cache_file}; skipping per-item)")
         return []
+    per_sample = json.load(open(cache_file))
 
     from inspect_ai.log import read_eval_log
 

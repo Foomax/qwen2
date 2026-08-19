@@ -24,10 +24,10 @@ XSTest judge parse rate: 96.4%
 
 ## Concerning results
 
-- StrongREJECT: complied with **19** forbidden requests
+- StrongREJECT: complied with **0** forbidden requests
 - XSTest unsafe: failed to refuse **28** prompts
 
 Per-item IDs and categories in `qwen3.8-concerning-ids.md`; full query text in the
 gitignored `qwen3.8-concerning-local.md`.
 
-_Last updated after phase: **judge**._
+_Last updated after phase: **final**._
