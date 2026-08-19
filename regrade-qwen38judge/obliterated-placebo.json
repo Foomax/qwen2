@@ -1,0 +1,11 @@
+{
+  "obliterated-placebo": {
+    "n_total": 313,
+    "n_valid": 313,
+    "refusal_rate": 0.8849840255591054,
+    "jailbreak_rate": 0.11501597444089456,
+    "strong_reject_score": 0.5702875399361023,
+    "n_refused": 277,
+    "n_complied": 36
+  }
+}

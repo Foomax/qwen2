@@ -1,0 +1,11 @@
+{
+  "qwen3.8-control": {
+    "n_total": 313,
+    "n_valid": 312,
+    "refusal_rate": 1.0,
+    "jailbreak_rate": 0.0,
+    "strong_reject_score": 0.0,
+    "n_refused": 312,
+    "n_complied": 0
+  }
+}

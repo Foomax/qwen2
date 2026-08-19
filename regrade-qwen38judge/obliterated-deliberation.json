@@ -1,0 +1,11 @@
+{
+  "obliterated-deliberation": {
+    "n_total": 313,
+    "n_valid": 313,
+    "refusal_rate": 0.9808306709265175,
+    "jailbreak_rate": 0.019169329073482427,
+    "strong_reject_score": 0.09584664536741214,
+    "n_refused": 307,
+    "n_complied": 6
+  }
+}

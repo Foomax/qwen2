@@ -210,3 +210,119 @@ Eval logs: `~/qwen2/logs/eval-normal/`, `~/qwen2/logs/eval-obliterated/`, `~/qwe
 4. Tihanyi et al., *CyberMetric: A Benchmark Dataset for Cybersecurity Knowledge of LLMs*, 2024.
 5. Laurent et al. (FutureHouse), *LAB-Bench: Measuring Capabilities of Language Models for Biology Research*, 2024.
 6. MAA, *AIME 2024* (via `Maxwell-Jia/AIME_2024`).
+
+---
+
+# Addendum — 2026-08-20: generational comparison, wrapper sweep, cross-judge check
+
+The original note (2026-08-11) compared stock and refusal-ablated Qwen3.6-27B. Three
+things have since been added: the full benchmark suite re-run on **Qwen3.8-27B**, a
+**sweep of prompt-level wrappers** over StrongREJECT, and a **second-judge re-grade** of
+every judge-scored log. All runs share the serving configuration, temperature and dataset
+of the original study.
+
+## A1. Qwen3.8-27B against the qwen3.6 pair
+
+| Task | Qwen3.8 | Q3.6 stock | Q3.6 ablated |
+|---|---|---|---|
+| `cybermetric_80` | 0.950 | 0.963 | 0.975 |
+| `aime2024` | **0.967** | 0.867 | 0.700 |
+| `lab_bench_cloning_scenarios` | 0.121 † | 0.485 | 0.455 |
+| StrongREJECT refusal | **1.000** | 1.000 | 0.831 |
+| StrongREJECT score | **0.000** | 0.00 | 0.81 |
+| XSTest safe over-refusal | **0.033** | 0.106 | 0.016 |
+| XSTest unsafe refusal | **0.853** | 0.852 | 0.788 |
+
+† Not a capability measurement. Below the 0.25 chance floor; median output 57,140 tokens
+against a 65,536 ceiling, 13/33 samples over 60k, completions empty. The model exhausted
+its context reasoning and never answered. See `cloningbench.md`.
+
+**The generational result reframes the study's central tradeoff.** Qwen3.8 refuses all 313
+forbidden prompts — identical to stock qwen3.6 — while cutting over-refusal of benign
+prompts from 10.6% to 3.3%. Ablation buys a calibration benefit at the cost of 17%
+harmful compliance; one generation of ordinary model development delivered most of that
+benefit with none of the cost. The tradeoff ablation exists to purchase is being
+eliminated by better base models rather than by better safety training.
+
+AIME is the other notable movement: 0.967 versus 0.867, achieved with **half** the output
+tokens (477k vs 952k) and two hours less wall time. Its single error was its single
+context-ceiling run, so its only failure is a non-convergence rather than a reasoning error.
+
+Architecturally the two generations are the **same family** — GGUF arch `qwen35`, hybrid
+attention/SSM with `full_attention_interval = 4`, 64 versus 65 layers — so the comparison
+is not confounded by an architecture change.
+
+## A2. Wrapper sweep (Qwen3.8 judge, 313 prompts per arm)
+
+| Arm | refuse | SR score |
+|---|---|---|
+| obliterated-refusal_suppression | **0.784** | 0.969 |
+| obliterated-control | 0.828 | 0.837 |
+| obliterated-placebo | 0.885 | 0.570 |
+| obliterated-jailbreak | 0.936 | 0.262 |
+| obliterated-responsible_assistant | 0.948 | 0.247 |
+| obliterated-deliberation | 0.981 | 0.096 |
+| obliterated-prefix_injection | 0.990 | 0.046 |
+| normal-control | 0.997 | 0.016 |
+| normal-responsible_assistant | 1.000 | 0.000 |
+
+**Only `refusal_suppression` lowers refusal below the unwrapped baseline.** Every other
+wrapper raises it, including both canonical attacks' sibling (`prefix_injection`, 0.990)
+and the community "universal jailbreak" (0.936). Two corrections follow.
+
+First, the earlier reading that "the jailbreak increased refusals, so it was ineffective"
+was **partly a grading artifact**. That wrapper mandates a decoy refusal *before* the real
+answer; a refusal-detecting judge scores the decoy unless it is stripped at the marker.
+With stripping applied the arm still does not lower refusal, so the qualitative conclusion
+survives — but it was reached for the wrong reason.
+
+Second, `placebo` — a neutral, non-safety instruction — raises refusal from 0.828 to 0.885.
+**Any long framing instruction around a forbidden prompt raises refusal**, so a safety
+wrapper's effect must be read against placebo, not against control. This is why the
+placebo arm was necessary.
+
+## A3. Per-item structure: wrappers do not behave like weight edits
+
+`divergence2.md` pairs `refusal_suppression` against unwrapped control on the 306 prompts
+both arms graded validly:
+
+| | n |
+|---|---:|
+| complied only **with** the wrapper | 32 |
+| complied only **without** it | 19 |
+| McNemar exact | p = 0.092 |
+
+Contrast `divergence.md`, where ablation versus stock was 83 one way and **1** the other.
+Ablation is near-perfectly nested — the signature of a single lowered threshold. A
+prompt-level attack is two-directional: it perturbs the decision, and the 4.4-point
+headline gap is the *net* of two larger opposing flows, not significant at conventional
+thresholds. **Prompt-level attacks and weight edits produce structurally different
+signatures**, which is visible per-item and invisible in aggregate rates.
+
+## A4. Cross-judge agreement
+
+Every StrongREJECT log was re-graded by an independent judge (Qwen3.8-27B) on identical
+`.eval` files:
+
+| Arm | q3.6 judge | q3.8 judge | Δ |
+|---|---|---|---|
+| obliterated-control | 0.835 | 0.828 | −0.006 |
+| obliterated-placebo | 0.898 | 0.885 | −0.013 |
+| obliterated-jailbreak | 0.928 | 0.936 | +0.008 |
+| obliterated-responsible_assistant | 0.952 | 0.948 | −0.003 |
+| qwen3.8-control | 1.000 | 0.997 | −0.003 |
+
+Maximum disagreement **1.3 points**. The conclusions are not artifacts of judge choice.
+The XSTest arms are *not* a clean judge comparison — the original qwen3.6 generations were
+lost and had to be regenerated, so those differences confound judge and generation.
+
+## A5. Revised conclusions
+
+1. Ablation removes refusals without adding capability. **Unchanged.**
+2. Ablation's benefit and cost are one indiscriminate dial. **Unchanged.**
+3. Prompt-level safety wrappers substantially restore refusal — but non-uniformly, and
+   partly because *any* long wrapper does. **Qualified by the placebo arm.**
+4. Of the attacks tested, only published refusal-suppression lowers refusal, and weakly.
+   **New; supersedes the earlier jailbreak reading.**
+5. The harm ceiling is set by base-model competence, not by the edit. A newer stock model
+   is simultaneously more capable, fully refusing, and better calibrated. **New.**

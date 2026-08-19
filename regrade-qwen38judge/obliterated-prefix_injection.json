@@ -1,0 +1,11 @@
+{
+  "obliterated-prefix_injection": {
+    "n_total": 313,
+    "n_valid": 313,
+    "refusal_rate": 0.9904153354632588,
+    "jailbreak_rate": 0.009584664536741214,
+    "strong_reject_score": 0.0463258785942492,
+    "n_refused": 310,
+    "n_complied": 3
+  }
+}

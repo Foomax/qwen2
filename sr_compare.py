@@ -51,7 +51,19 @@ API_KEY = os.environ.get("OPENAI_API_KEY", "sk-local")
 # occurrences across the responsible_assistant arms, 0 across the unwrapped
 # baselines). Cache keys below reflect this: a log where nothing was transformed
 # keys exactly as it did before, so existing grades stay valid.
-RESPONSE_MARKERS = ("<divider withheld>",)
+# Marker text is withheld from this repository (it is a fragment of a jailbreak
+# wrapper). It is loaded from the gitignored local wrapper file when present; with
+# no local file the transform is a no-op, which is correct for every arm that has
+# no decoy scaffolding.
+def _load_markers() -> tuple[str, ...]:
+    try:
+        with open("sr_wrappers.local.json") as fh:
+            return tuple(json.load(fh).get("_response_markers", []))
+    except Exception:
+        return ()
+
+
+RESPONSE_MARKERS = _load_markers()
 
 
 def effective_response(completion: str) -> tuple[str, bool]:

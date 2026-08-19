@@ -86,3 +86,9 @@ __pycache__/
 # Session history export — untracked and must never be swept in by `git add -A`
 claude-history.JSON
 claude-history.json
+
+divergence2-local.md
+
+# Real wrapper text (attack prompts) — never published
+sr_wrappers.local.json
+sr_compare_q38.py

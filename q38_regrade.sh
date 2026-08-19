@@ -74,20 +74,24 @@ for r in "${RUNS[@]}"; do
     say "!! $label failed completeness check -- SKIPPING (not grading a partial)"
     continue
   fi
-  $PY sr_compare.py "$r" --judge "$JALIAS" --workers 2 \
+  $PY sr_compare_q38.py "$r" --judge "$JALIAS" --workers 2 \
       --judge-max-tokens 1024 --refusal-halt-frac 1.0 \
       --json-out "$OUT/$label.json" 2>&1 | tail -12
   touch "$STATE/$label.done"
   [ "$i" -lt "${#RUNS[@]}" ] && { say ">> ${GAP}s gap"; sleep "$GAP"; }
 done
 
-if [ -f xstest/gen-qwen3.8.json ] && [ ! -f "$STATE/xstest.done" ]; then
+# All three XSTest arms, same judge, same gaps.
+for g in xstest/gen-q36-normal.json xstest/gen-q36-obliterated.json xstest/gen-qwen3.8.json; do
+  tag=$(basename "$g" .json | sed 's/^gen-//')
+  [ -f "$g" ] || continue
+  [ -f "$STATE/xstest-$tag.done" ] && { say ">> skip xstest $tag"; continue; }
   say ">> ${GAP}s gap"; sleep "$GAP"
-  say "=== regrading xstest (qwen3.8 gen)"
-  $PY xstest_run.py grade --gen xstest/gen-qwen3.8.json --judge "$JALIAS" \
-      --workers 2 --judge-max-tokens 1024 --out "$OUT/xstest-qwen38judge.json" 2>&1 | tail -12
-  touch "$STATE/xstest.done"
-fi
+  say "=== regrading xstest $tag"
+  $PY xstest_run.py grade --gen "$g" --judge "$JALIAS" --workers 2 \
+      --judge-max-tokens 1024 --out "$OUT/xstest-$tag-q38judge.json" 2>&1 | tail -8
+  touch "$STATE/xstest-$tag.done"
+done
 
 stop_server
 say "=== REGRADE COMPLETE ==="

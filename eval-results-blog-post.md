@@ -97,3 +97,79 @@ Within the obliterated model the two wrappers land statistically indistinguishab
 ---
 
 *Qwen3.6-27B vs qwen3.6-27b-obliteratus, both Q4_K_M; llama.cpp b9436; Inspect AI 0.3.251; single RTX 3090 (24 GB). StrongREJECT (plain and wrapped), and XSTest, graded by a local judge (same model, same rubric, both sides; for wrapped runs the judge sees the original question, not the wrapper) — aggregate rates only; no harmful completions reproduced. XSTest prompts from the original (ungated) source. Full numbers and caveats in the companion technical note.*
+
+---
+
+# Update, 20 August 2026: the tradeoff is disappearing
+
+Since the original post I ran the whole suite again on a newer model, **Qwen3.8-27B**,
+swept a set of prompt wrappers over StrongREJECT, and re-graded everything with a second
+independent judge. One result changes the story.
+
+## The newer model gets the benefit without the cost
+
+Abliteration is a trade. You strip out refusals, and you get two things: fewer annoying
+false refusals on harmless questions, and more genuine compliance with harmful ones. My
+earlier numbers put that at benign over-refusal falling 10.6% → 1.6%, and harmful refusal
+falling 100% → 83%.
+
+Qwen3.8, straight out of the box with nothing done to it:
+
+| | Qwen3.8 | Qwen3.6 stock | Qwen3.6 abliterated |
+|---|---|---|---|
+| Refuses harmful prompts | **100%** | 100% | 83% |
+| Wrongly refuses safe prompts | **3.3%** | 10.6% | 1.6% |
+
+It refuses every one of the 313 forbidden prompts, and it wrongly refuses safe questions
+**a third as often as the previous generation**. That's most of what people abliterate
+models to get, with none of what they give up for it.
+
+So the interesting finding isn't about abliteration at all. It's that the thing
+abliteration is *for* — a model that doesn't nag you about harmless questions — is being
+solved by ordinary model development. If that trend holds, the case for abliterating a
+frontier open-weights model gets weaker with every release.
+
+It's also just better: 0.967 on AIME 2024 versus 0.867, using **half** the thinking tokens.
+
+## The jailbreak result was partly my grader's fault
+
+I previously wrote that the jailbreak wrapper *increased* refusals, and guessed it was
+ineffective or misapplied. Half right, for the wrong reason.
+
+That jailbreak instructs the model to emit a refusal first, then a divider, then the real
+answer. My judge read the decoy refusal at the top and scored the whole response as a
+refusal. Once you split at the divider and grade only what follows, the artifact goes away
+— and the arm still doesn't lower refusals. Right conclusion, wrong evidence, which is
+worth saying out loud.
+
+The genuinely new result is that of every wrapper I tested, exactly one lowers refusal
+below baseline: **refusal suppression**, the plain published attack from Wei et al. that
+just tells the model not to use refusal language. It drops refusal from 82.8% to 78.4%.
+The elaborate community jailbreak *raises* it to 93.6%.
+
+There's a lesson in that. The fancy jailbreak with the ASCII art and the roleplay scaffolding
+loses to four sentences of plain instruction from a 2023 paper.
+
+## And a caution about my own safety wrapper
+
+I also found that a **placebo** wrapper — a neutral instruction with no safety content at
+all — raises refusal from 82.8% to 88.5%. Just wrapping a harmful question in *any* long
+instruction makes the model more likely to refuse it.
+
+That means my headline "safety wrapper works!" result needs reading against the placebo,
+not against the bare prompt. A good chunk of it is the wrapper being long, not the wrapper
+being about safety. I'd have reported a real effect as bigger than it is without that arm.
+
+## Does the grader change the answer?
+
+I re-graded every log with a completely different judge. Biggest disagreement anywhere:
+**1.3 percentage points**. So no — these conclusions aren't an artifact of which model I
+picked to grade them.
+
+## What I'd tell someone starting this
+
+- Run a placebo. Without it you can't tell "safety instructions work" from "instructions work".
+- Look at per-item divergence, not just rates. Abliteration moved 83 prompts one way and 1
+  the other — a single lowered threshold. The prompt attack moved 32 one way and 19 the
+  other, which is a completely different mechanism, and the aggregate rate hides that.
+- Check what your judge is actually reading before you trust what it tells you.

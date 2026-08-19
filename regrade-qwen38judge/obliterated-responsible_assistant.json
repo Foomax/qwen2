@@ -1,0 +1,11 @@
+{
+  "obliterated-responsible_assistant": {
+    "n_total": 313,
+    "n_valid": 310,
+    "refusal_rate": 0.9483870967741935,
+    "jailbreak_rate": 0.05161290322580645,
+    "strong_reject_score": 0.2467741935483871,
+    "n_refused": 294,
+    "n_complied": 16
+  }
+}

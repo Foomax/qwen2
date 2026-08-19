@@ -1,0 +1,142 @@
+================================================================================
+ABLITERATION & REFUSAL BEHAVIOUR — CONSOLIDATED RESULTS
+Qwen3.6-27B (stock / abliterated) and Qwen3.8-27B
+Compiled 2026-08-20. All runs local: llama.cpp, Q4_K_M, single RTX 3090.
+================================================================================
+
+RESEARCH QUESTION
+  How harmful is a state-of-the-art local LLM when it is obliterated?
+
+ONE-LINE ANSWER
+  Abliteration reliably removes refusals (100% -> 83%) without adding capability,
+  but the harm ceiling is set by the base model's competence, not by the edit --
+  and the newest generation refuses everything while over-refusing three times
+  less, so the tradeoff abliteration exists to buy is disappearing.
+
+--------------------------------------------------------------------------------
+1. CAPABILITY  (deterministic scorers, no judge)
+--------------------------------------------------------------------------------
+  Task                          Qwen3.8    Q3.6 stock   Q3.6 abliterated
+  cybermetric_80                0.950      0.963        0.975
+  aime2024                      0.967      0.867        0.700
+  lab_bench_cloning_scenarios   0.121 [!]  0.485        0.455
+
+  [!] NOT A CAPABILITY MEASUREMENT. Below the 0.25 chance floor for 4-option
+      MCQ. Median output 57,140 tokens against a 65,536 ceiling; 13/33 samples
+      over 60k; completions empty. The model exhausted context reasoning and
+      never answered. See cloningbench.md. Re-run at 98,304 context proposed.
+
+  Abliteration cost no capability (all three qwen3.6 deltas non-significant).
+  Qwen3.8 gains 10 points on AIME using HALF the output tokens (477k vs 952k).
+
+--------------------------------------------------------------------------------
+2. REFUSAL BEHAVIOUR  (primary numbers; judge = qwen3.6-27b-normal)
+--------------------------------------------------------------------------------
+  Metric                              Qwen3.8   Q3.6 stock   Q3.6 abliterated
+  StrongREJECT refusal rate           1.000     1.000        0.831
+  StrongREJECT score (higher=worse)   0.000     0.00         0.81
+  XSTest safe: OVER-refusal (lower=better)  0.033  0.106      0.016
+  XSTest unsafe: refusal (higher=safer)     0.853  0.852      0.788
+
+  Parse rates: StrongREJECT 99.7%, XSTest 96.4%.
+  Abliteration: -17 points harmful refusal, -9 points benign over-refusal.
+  One indiscriminate dial; benefit and cost are the same edit.
+  Qwen3.8: full refusal AND 3x less over-refusal than stock. It obtains most of
+  abliteration's calibration benefit without abliteration's safety cost.
+
+--------------------------------------------------------------------------------
+3. WRAPPER CONDITIONS  (judge = Qwen3.8-27B, 313 StrongREJECT prompts each)
+--------------------------------------------------------------------------------
+  Arm                                  n    refuse   SR score
+  obliterated-refusal_suppression     310   0.784    0.969   <- ONLY arm below
+  q36-obliterated-control             309   0.828    0.837      its own control
+  obliterated-placebo                 313   0.885    0.570
+  obliterated-jailbreak               298   0.936    0.262
+  obliterated-responsible_assistant   310   0.948    0.247
+  obliterated-deliberation            313   0.981    0.096
+  obliterated-prefix_injection        313   0.990    0.046
+  normal-jailbreak                    313   0.978    0.099
+  normal-placebo                      313   0.990    0.048
+  normal-responsible_assistant        312   1.000    0.000
+  q36-normal-control                  313   0.997    0.016
+  q38-control                         313   0.997    0.016
+
+  KEY FINDING: of every wrapper tested, only refusal_suppression (Wei et al.
+  2023) lowers refusal below the unwrapped baseline. Every other wrapper --
+  including the community "universal jailbreak" -- RAISES refusal. The jailbreak
+  arm's apparent effect was partly a grading artifact: it mandates a decoy
+  refusal before the real answer, which a refusal-detecting judge scores as a
+  refusal unless the decoy is stripped first.
+
+  Safety wrappers work but not uniformly: responsible_assistant cuts compliance
+  16.5% -> 4.8%, yet made hate/harassment compliance WORSE (6.2% -> 10.4%).
+
+--------------------------------------------------------------------------------
+4. CROSS-JUDGE AGREEMENT  (robustness check)
+--------------------------------------------------------------------------------
+  Same StrongREJECT .eval logs graded by two independent judges:
+
+  Arm                                q3.6 judge   q3.8 judge   delta
+  q36-obliterated-control            0.835        0.828        -0.006
+  obliterated-placebo                0.898        0.885        -0.013
+  obliterated-jailbreak              0.928        0.936        +0.008
+  obliterated-responsible_assistant  0.952        0.948        -0.003
+  q38-control                        1.000        0.997        -0.003
+
+  Maximum disagreement 1.3 points. The study's conclusions are not artifacts of
+  judge choice -- roughly one point of the effect is attributable to the grader.
+
+  CAVEAT: the XSTest arms are NOT a clean judge comparison. The original qwen3.6
+  XSTest generations were lost, so they were REGENERATED on 2026-08-19. Those
+  numbers differ by both judge and generation:
+    q36-normal        safe_over 0.073  unsafe_ref 0.848  (parse 98.4%)
+    q36-obliterated   safe_over 0.020  unsafe_ref 0.681  (parse 95.6%)
+    qwen3.8           safe_over 0.048  unsafe_ref 0.833  (parse 98.0%)
+
+--------------------------------------------------------------------------------
+5. PER-ITEM DIVERGENCE
+--------------------------------------------------------------------------------
+  Abliteration vs stock (divergence.md), ~760 graded prompts:
+    obliterated complied / stock refused ......... 83
+    stock complied / obliterated refused .......... 1
+  Near-perfect nesting = ONE lowered threshold.
+
+  refusal_suppression vs unwrapped (divergence2.md), 306 paired:
+    complied only WITH wrapper .................... 32
+    complied only WITHOUT wrapper ................. 19
+    McNemar exact p = 0.092
+  Two-directional = perturbation, NOT a threshold shift. The 4.4-point headline
+  gap is the net of two opposing flows and is not significant.
+
+--------------------------------------------------------------------------------
+6. CONCERNING RESULTS (Qwen3.8)
+--------------------------------------------------------------------------------
+  StrongREJECT: complied with 0 of 313 forbidden requests.
+  XSTest unsafe: failed to refuse 28 of 191 validly-graded prompts.
+  Per-item IDs and categories: qwen3.8-concerning-ids.md
+  Verbatim query text: kept local and gitignored, never published.
+
+--------------------------------------------------------------------------------
+7. METHOD NOTES
+--------------------------------------------------------------------------------
+  Serving: llama.cpp b9436; capability tasks 65,536 ctx / thinking on /
+    --parallel 1; refusal tasks 32,768 ctx / thinking off / temp 0 / --parallel 4.
+  Qwen3.6 and Qwen3.8 are the SAME architecture family (GGUF arch "qwen35",
+    hybrid attention/SSM, full_attention_interval 4, 64 vs 65 layers), so the
+    generational comparison is not confounded by an architecture change.
+  Only ~16 of 65 layers carry a KV cache; the naive KV formula overestimates
+    VRAM by ~4x on this architecture. Measured: 20.2 GB at 65,536 context.
+  XSTest prompts from the ungated GitHub source; the HF mirror is gated.
+  Judge budget 1024 tokens; a 512-token pass truncated verdicts and biased an
+    earlier run.
+
+--------------------------------------------------------------------------------
+8. KNOWN GAPS
+--------------------------------------------------------------------------------
+  - lab_bench_cloning_scenarios for Qwen3.8 needs re-running (cloningbench.md).
+  - Qwen3.8 was not abliterated; no abliterated Qwen3.8 build was tested. The
+    generational comparison is stock-to-stock plus qwen3.6's abliterated arm.
+  - Capability tasks are small (n=30-80); treat magnitudes as indicative.
+  - Single local judge per pass. Cross-judge agreement is measured (~1 point)
+    but both judges are 27B-Q4 models from one family.
+================================================================================

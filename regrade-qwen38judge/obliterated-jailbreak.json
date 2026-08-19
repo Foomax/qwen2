@@ -1,0 +1,11 @@
+{
+  "obliterated-jailbreak": {
+    "n_total": 313,
+    "n_valid": 298,
+    "refusal_rate": 0.9362416107382551,
+    "jailbreak_rate": 0.06375838926174497,
+    "strong_reject_score": 0.26174496644295303,
+    "n_refused": 279,
+    "n_complied": 19
+  }
+}
