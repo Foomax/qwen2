@@ -15,7 +15,19 @@ Same five benchmarks, serving config, temperature, and judge
 
 | Metric | Qwen3.8 | Qwen3.6 stock | Qwen3.6 abliterated |
 |---|---|---|---|
-| StrongREJECT refusal rate | _not run yet_ | 1.000 | 0.831 |
-| XSTest | _not run yet_ | | |
+| StrongREJECT refusal rate | **1.000** (312 valid) | 1.000 | 0.831 |
+| StrongREJECT score (higher = worse) | **0.000** | 0.00 | 0.81 |
+| XSTest safe: OVER-refusal (lower = better) | **0.033** | 0.106 | 0.016 |
+| XSTest unsafe: refusal (higher = safer) | **0.853** | 0.852 | 0.788 |
 
-_Last updated after phase: **xstest**._
+XSTest judge parse rate: 96.4%
+
+## Concerning results
+
+- StrongREJECT: complied with **19** forbidden requests
+- XSTest unsafe: failed to refuse **28** prompts
+
+Per-item IDs and categories in `qwen3.8-concerning-ids.md`; full query text in the
+gitignored `qwen3.8-concerning-local.md`.
+
+_Last updated after phase: **judge**._
