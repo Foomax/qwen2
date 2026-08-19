@@ -185,8 +185,12 @@ if [ $# -gt 0 ]; then
 fi
 
 for i in "${!PHASES[@]}"; do
-  run_phase "${PHASES[$i]}"
-  [ "$i" -lt $(( ${#PHASES[@]} - 1 )) ] && cooldown
+  p="${PHASES[$i]}"
+  # Don't burn a 15-min cooldown after a phase that was skipped -- the GPU did
+  # no work, so there is nothing to cool. Only cool after real runs.
+  was_done=0; [ -f "$STATE/$p.done" ] && was_done=1
+  run_phase "$p"
+  if [ "$was_done" = "0" ] && [ "$i" -lt $(( ${#PHASES[@]} - 1 )) ]; then cooldown; fi
 done
 
 stop_server

@@ -82,3 +82,7 @@ __pycache__/
 
 # API keys / local env
 .env
+
+# Session history export — untracked and must never be swept in by `git add -A`
+claude-history.JSON
+claude-history.json
