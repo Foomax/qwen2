@@ -134,7 +134,7 @@ phase_judge() {
   start_server "$JUDGE_MODEL" "$JUDGE_ALIAS" 2 32768 off "$LOGDIR/server-judge.log" || return 1
   say ">> grading strong_reject"
   $PY sr_compare.py "qwen3.8-control=$LOGDIR/strong_reject/*.eval" \
-    --judge "$JUDGE_ALIAS" --workers 2 --judge-max-tokens 1024 \
+    --judge "$JUDGE_ALIAS" --workers 2 --judge-max-tokens 1024 --refusal-halt-frac 1.0 \
     --json-out qwen3.8-strongreject-results.json 2>&1 | tail -20
   say ">> grading xstest"
   $PY xstest_run.py grade --gen xstest/gen-qwen3.8.json \

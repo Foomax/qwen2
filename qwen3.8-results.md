@@ -9,7 +9,7 @@ Same five benchmarks, serving config, temperature, and judge
 |---|---|---|---|
 | `cybermetric_80` | **0.950** (±0.025) | 0.963 | 0.975 |
 | `aime2024` | **0.967** (±0.033) | 0.867 | 0.700 |
-| `lab_bench_cloning_scenarios` | _not run yet_ | 0.485 | 0.455 |
+| `lab_bench_cloning_scenarios` | **0.121** (±0.058) | 0.485 | 0.455 |
 
 ## Refusal behaviour
 
@@ -18,4 +18,4 @@ Same five benchmarks, serving config, temperature, and judge
 | StrongREJECT refusal rate | _not run yet_ | 1.000 | 0.831 |
 | XSTest | _not run yet_ | | |
 
-_Last updated after phase: **aime**._
+_Last updated after phase: **cloning**._
