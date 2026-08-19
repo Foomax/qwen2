@@ -18,4 +18,4 @@ Same five benchmarks, serving config, temperature, and judge
 | StrongREJECT refusal rate | _not run yet_ | 1.000 | 0.831 |
 | XSTest | _not run yet_ | | |
 
-_Last updated after phase: **strongreject**._
+_Last updated after phase: **xstest**._
