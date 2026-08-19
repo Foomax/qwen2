@@ -37,27 +37,48 @@ mkdir -p "$LOGDIR" "$STATE" xstest
 
 say() { echo "[$(date -Is)] $*"; }
 
+SERVER_PID=""
+
 stop_server() {
-  pgrep -x llama-server | xargs -r kill 2>/dev/null || true
-  # Wait for VRAM to actually come back: starting too soon dies with
-  # "cudaMalloc failed: out of memory". This is the most common failure mode.
+  # Kill ONLY the server this script started. A bare `pgrep -x llama-server |
+  # xargs kill` sweeps up other sessions' servers sharing this GPU -- it killed
+  # a peer's run once. Never do that again.
+  if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    kill "$SERVER_PID" 2>/dev/null || true
+  fi
+  SERVER_PID=""
+  # Wait for VRAM to come back before the next load, else cudaMalloc fails.
   for _ in $(seq 1 60); do
     free=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1)
     [ "${free:-0}" -gt 20000 ] && return 0
     sleep 5
   done
-  say "WARNING: VRAM did not free below threshold; continuing anyway"
+  return 0
+}
+
+# Someone else's server is on the card: wait, never kill.
+await_gpu() {
+  for _ in $(seq 1 120); do
+    free=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1)
+    [ "${free:-0}" -gt 20000 ] && return 0
+    sleep 10
+  done
+  say "!! GPU still held by another process after 20 min -- refusing to start (would OOM)"
+  return 1
 }
 
 start_server() { # path alias parallel ctx think logfile
   local path=$1 al=$2 par=$3 ctx=$4 think=$5 logf=$6
   stop_server
+  await_gpu || return 1
   say ">> serving $al (parallel=$par ctx=$ctx thinking=$think)"
   nohup "$LLAMA" -m "$path" -a "$al" \
     -ngl 1024 -c "$ctx" --parallel "$par" \
     --cache-type-k q8_0 --cache-type-v q8_0 \
     --reasoning "$think" --host 127.0.0.1 --port 8080 \
     > "$logf" 2>&1 &
+  SERVER_PID=$!
+  say ">> server pid $SERVER_PID (orchestrator pid $$)"
   for _ in $(seq 1 240); do
     curl -sf http://127.0.0.1:8080/health >/dev/null 2>&1 && { say ">> ready"; return 0; }
     sleep 5
@@ -132,6 +153,7 @@ phase_xstest() {
 phase_judge() {
   # One judge for everything, same model and budget as the qwen3.6 runs.
   start_server "$JUDGE_MODEL" "$JUDGE_ALIAS" 2 32768 off "$LOGDIR/server-judge.log" || return 1
+  $PY q38_preflight.py || { say "!! preflight failed -- refusing to grade"; return 1; }
   say ">> grading strong_reject"
   $PY sr_compare.py "qwen3.8-control=$LOGDIR/strong_reject/*.eval" \
     --judge "$JUDGE_ALIAS" --workers 2 --judge-max-tokens 1024 --refusal-halt-frac 1.0 \
