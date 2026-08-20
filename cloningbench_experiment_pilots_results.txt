@@ -1,0 +1,105 @@
+================================================================================
+lab_bench_cloning_scenarios — Qwen3.8-27B CONFIGURATION PILOTS
+15-sample pilots (--limit 15). 2026-08-20. RTX 3090, llama.cpp b9436, Q4_K_M.
+Purpose: find a configuration under which the model actually answers, before
+spending ~12h on a full 33-sample run.
+================================================================================
+
+SUMMARY
+                 n   accuracy  stderr  coverage  empty   median   max     loops
+  orig (65k)    33   0.121     0.058   1.000     27/33   57,140   63,686   0
+  pilot 1       15   0.200     0.107   1.000      8/15   17,428   33,259   0
+  pilot 2       15   0.133     0.091   0.867      4/15    9,349   28,329   0
+  pilot 3       15   0.467     ~0.13   0.933      2/15   14,222   28,260   0
+
+  Reference baselines (qwen3.6, 33 samples, original config):
+    stock        0.485        abliterated  0.455
+
+  "empty"  = assistant message contained no text; all reasoning, no answer.
+  "loops"  = generation ended in a degenerate character-level repetition.
+  Score distributions: C=correct, I=incorrect, N=no answer parsed.
+    orig    I=29 C=4
+    pilot1  I=12 C=3
+    pilot2  I=11 C=2  N=2
+    pilot3  I=7  C=7  N=1
+
+--------------------------------------------------------------------------------
+EXACT SERVER CONFIGURATIONS
+--------------------------------------------------------------------------------
+Common to all: -ngl 1024 --parallel 1 --cache-type-k q8_0 --cache-type-v q8_0
+Eval command:  inspect eval inspect_evals/lab_bench_cloning_scenarios \
+                 --model openai/qwen3.8-27b --max-connections 1 \
+                 -M client_timeout=7200        (no --temperature, no --max-tokens)
+
+ORIGINAL (the 0.121 run)
+  -c 65536 --reasoning on
+  reasoning_effort: xhigh          <- CHAT TEMPLATE DEFAULT, not set by us
+  sampling: entirely unset -> llama.cpp defaults
+    temp 0.80, top_k 40, top_p 0.95, min_p 0.05
+    repeat_penalty 1.00 (off), presence 0.00 (off), frequency 0.00 (off),
+    dry_multiplier 0.00 (off)      <- every anti-repetition sampler DISABLED
+  VRAM: 20.2 GB used / 3.9 GB free
+
+PILOT 1  — context + reasoning effort
+  -c 98304 --reasoning on --reasoning-budget 32768
+  --chat-template-kwargs '{"reasoning_effort":"medium"}'
+  sampling: unset (as original)
+  VRAM: 21.5 GB used / 2.6 GB free
+
+PILOT 2  — pilot 1 + model-recommended sampling + aggressive DRY
+  --temp 1.0 --top-k 20 --top-p 0.95            (values declared in GGUF metadata)
+  --dry-multiplier 0.8 --dry-base 1.75 --dry-allowed-length 8
+
+PILOT 3  — pilot 2 with DRY relaxed and a forced-answer nudge   *** ACCEPTED ***
+  -c 98304 --reasoning on --reasoning-budget 40960
+  --reasoning-budget-message "You have used your thinking budget. Stop analysing
+                              and state your final answer choice now."
+  --chat-template-kwargs '{"reasoning_effort":"medium"}'
+  --temp 1.0 --top-k 20 --top-p 0.95
+  --dry-multiplier 0.8 --dry-base 1.75 --dry-allowed-length 32
+  VRAM: 21.5 GB used / 2.6 GB free
+
+--------------------------------------------------------------------------------
+WHAT EACH CHANGE DID
+--------------------------------------------------------------------------------
+reasoning_effort xhigh -> medium
+  Removed the template-injected preamble ("Reasoning effort is set to xhigh.
+  Please think carefully..., validate key assumptions, consider plausible
+  alternatives..."). Median output 57,140 -> 17,428 tokens; context-ceiling hits
+  13/33 -> 0/15. Necessary, not sufficient: empties only fell 27/33 -> 8/15.
+
+context 65,536 -> 98,304
+  Removed truncation as a confound. Nothing came near the new ceiling in any
+  pilot (max observed 33,259), so on this evidence 98,304 is generous and the
+  original 65,536 was not the binding constraint.
+
+sampling unset -> temp 1.0 / top_k 20 / top_p 0.95 + DRY
+  Eliminated degenerate repetition loops (e.g. "CTGCTGCCTGCTGCTGCC..." repeated
+  to exhaustion inside <think>). Loops are the reason tokens were being burned.
+
+DRY allowed-length 8 -> 32
+  At 8, DRY penalised the legitimately repetitive work of copying plasmid DNA.
+  One sample stopped after 450 characters mid-sentence, and accuracy fell to
+  0.133. At 32 only pathological runs are penalised. Accuracy 0.133 -> 0.467.
+
+--reasoning-budget-message (added in pilot 3)
+  When the budget force-closes </think>, the model previously emitted EOS with
+  no answer. The nudge makes it commit to a choice. Contributed to empties
+  falling 4/15 -> 2/15.
+
+--------------------------------------------------------------------------------
+ACCEPTANCE CRITERIA (set before pilot 1, applied unchanged)
+--------------------------------------------------------------------------------
+  1. empty completions at or near zero ........ pilot 3: 2/15   (orig 27/33)
+  2. no context-ceiling hits .................. pilot 3: 0/15   PASS
+  3. accuracy at or above the 0.25 chance floor pilot 3: 0.467  PASS
+  Pilots 1 and 2 failed criterion 3 and were rejected.
+
+--------------------------------------------------------------------------------
+STATUS
+--------------------------------------------------------------------------------
+  Pilot 3 config is ACCEPTED but the full 33-sample run was NOT executed
+  (stopped by user instruction). The 0.467 figure is a 15-sample pilot, not a
+  reportable benchmark result. The published number for Qwen3.8 on this task
+  remains UNMEASURED; 0.121 is an artifact and must not be quoted.
+================================================================================

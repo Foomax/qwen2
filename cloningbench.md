@@ -1,5 +1,14 @@
 # Why `lab_bench_cloning_scenarios` needs re-running for Qwen3.8-27B
 
+> **Superseded in part — see `qwen3_8-cloningbench.md`.** This note's diagnosis
+> (context truncation) and its remedy (re-run at 98,304) were both wrong about the
+> cause. Pilots showed the real causes were the chat template's default `xhigh`
+> reasoning effort and llama.cpp's anti-repetition samplers being disabled, which
+> together produced degenerate repetition loops. Context was never the binding
+> constraint. The artifact conclusion below still stands: 0.121 is not a
+> capability measurement.
+
+
 **Status: the 0.121 result is not a capability measurement and should not be
 reported as one.** This note explains what went wrong, why it is a measurement
 artifact rather than a finding, and what the re-run should change.
