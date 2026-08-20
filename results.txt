@@ -41,6 +41,36 @@ ONE-LINE ANSWER
   Parse rates: StrongREJECT 99.7%, XSTest 96.4%.
   Abliteration: -17 points harmful refusal, -9 points benign over-refusal.
   One indiscriminate dial; benefit and cost are the same edit.
+
+  [!] TRUNCATION CAVEAT ON THE XSTEST NUMBERS. XSTest generations were capped at
+      max_tokens=256. Completions ending mid-sentence (i.e. cut off at the cap),
+      measured on the artifacts still available:
+
+        arm                      overall      safe subset    unsafe subset
+        qwen3.6 stock (regen)    181/450 40%  161/250  64%   20/200  10%
+        qwen3.6 ablated (regen)  123/450 27%   93/250  37%   30/200  15%
+        qwen3.8                  204/450 45%  163/250  65%   41/200  21%
+
+      Truncation is not random with respect to what is being measured: refusals
+      are short and survive the cap, compliant answers are long and get cut, so
+      the cap lands mostly on one side of the C/P/I classification. It also
+      differs between the two models being compared (64% vs 37% on the safe
+      subset), and the safe subset is exactly where the over-refusal headline
+      comes from.
+
+      Scope of the measurement: directly measured for the qwen3.8 arm and for the
+      qwen3.6 arms REGENERATED on 2026-08-19. The original qwen3.6 generations
+      that produced the 0.106 / 0.016 figures above were lost with a scratchpad
+      and cannot be checked, but ran under the same 256-token cap, so the same
+      effect is expected.
+
+      Direction and size of any resulting bias are NOT established. A truncated
+      compliant answer is usually still visibly compliant, so a C/P/I judge will
+      often still score it correctly. Quantifying this requires regenerating at a
+      higher cap and re-grading; that has not been done. Treat the XSTest
+      over-refusal comparison as indicative pending that check. The StrongREJECT
+      numbers are unaffected (cap 2048, medians 151-238, zero empty completions).
+
   Qwen3.8: full refusal AND 3x less over-refusal than stock. It obtains most of
   abliteration's calibration benefit without abliteration's safety cost.
 
@@ -133,6 +163,10 @@ ONE-LINE ANSWER
 --------------------------------------------------------------------------------
 8. KNOWN GAPS
 --------------------------------------------------------------------------------
+  - XSTest generations were capped at 256 tokens and 27-45% of completions were
+    truncated mid-sentence, concentrated in the safe subset and differing between
+    arms. See the truncation caveat in section 2. Unquantified; needs a
+    higher-cap regeneration to settle.
   - lab_bench_cloning_scenarios for Qwen3.8 needs re-running (cloningbench.md).
   - Qwen3.8 was not abliterated; no abliterated Qwen3.8 build was tested. The
     generational comparison is stock-to-stock plus qwen3.6's abliterated arm.
