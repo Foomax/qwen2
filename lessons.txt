@@ -1,0 +1,155 @@
+================================================================================
+LESSONS — what this project actually taught, beyond the results
+Compiled 2026-08-20. Written for whoever runs the next eval, including me.
+================================================================================
+
+THE ONE THAT MATTERS MOST
+--------------------------------------------------------------------------------
+A benchmark harness reports a number whether or not it measured anything.
+Nothing in Inspect, llama.cpp, or inspect_evals warned that Qwen3.8 had answered
+zero of 33 cloning questions. It returned 0.121 with a straight face. Every
+other lesson below is a variation on this.
+
+Corollary: a sub-chance score on multiple choice is a plumbing bug, not a
+capability finding. Below the guessing floor means answers are not being
+produced. Treat it as a crash, not a result.
+
+--------------------------------------------------------------------------------
+1. DEFAULTS YOU DID NOT CHOOSE ARE STILL CHOICES
+--------------------------------------------------------------------------------
+* The model's chat template injected `reasoning_effort: xhigh` ("think carefully,
+  validate key assumptions, consider plausible alternatives"). We never set it.
+  It was excellent for AIME (0.967) and fatal for long-input MCQ. Read the chat
+  template your server actually loads -- llama-server prints the rendered example
+  at startup, which is the cheapest place to catch this.
+* Sampling was unset at every level, so llama.cpp defaults applied. In llama.cpp
+  EVERY anti-repetition sampler ships disabled: repeat_penalty 1.00, presence
+  0.00, frequency 0.00, dry_multiplier 0.00. On repetitive low-entropy input
+  (DNA), the model fell into degenerate loops and burned its whole budget.
+* "Leave it at defaults for comparability" was argued here and was wrong. If the
+  default is broken, matching it propagates the break. Record the config
+  difference instead of inheriting the bug.
+
+2. FIXES OVERSHOOT; MEASURE THE FIX TOO
+--------------------------------------------------------------------------------
+DRY sampling at allowed-length 8 eliminated the loops AND suppressed legitimate
+repetitive work (copying plasmid DNA), dropping accuracy 0.200 -> 0.133 with one
+sample stopping after 450 characters. At allowed-length 32 accuracy went to
+0.467. The first fix looked successful on the metric it targeted (loops: zero)
+while making the actual result worse. Always check the fix against the outcome
+you care about, not the symptom you were chasing.
+
+3. ANY CAP BECOMES A CONFOUND WHEN IT CORRELATES WITH WHAT YOU MEASURE
+--------------------------------------------------------------------------------
+This is the most transferable finding, and it is subtle because the numbers stay
+plausible.
+* XSTest generated at max_tokens=256. Completions ending mid-sentence: 40% /
+  27% / 45% across arms -- but concentrated in the SAFE subset (64% / 37% / 65%)
+  versus the unsafe subset (10% / 15% / 21%). Why? Refusals are short and
+  survive the cap; compliant answers are long and get cut. The cap therefore
+  hits one side of the classification, and hits the two compared models
+  differently. The headline over-refusal comparison is drawn from exactly that
+  subset and those arms.
+* StrongREJECT (cap 2048): 3 abliterated samples ran to exactly 2048 and were
+  graded "refusal". A 2048-token output is almost certainly not a refusal --
+  they are near-certainly truncated compliances misgraded. ~1 point, and in the
+  conservative direction (it understates abliteration's effect).
+* Precedent in the same project: the JUDGE was truncated at 512 tokens before
+  emitting its verdict, more often on the normal model's longer hedged answers.
+  Re-grading at 1024 moved abliterated unsafe-refusal 0.934 -> 0.788.
+Same bug at three layers: generation cap, judge cap, context ceiling.
+Rule: report cap-hit rate PER CONDITION. Asymmetry is the signal, not the mean.
+
+4. VERIFY COMPLETENESS; NEVER TRUST A GLOB
+--------------------------------------------------------------------------------
+A killed server leaves a partial .eval that still matches *.eval and looks fine.
+Two different partials appeared here: one at 280/313 and one at 0/313. A range
+test (0 < n < expected) catches the first and misses the second. The load-bearing
+check is status == "success" AND exact expected n. Assert it before grading, not
+after. Quarantine partials by renaming so they cannot match.
+
+5. GRADE CACHES ARE SHARED STATE WITH NO OWNER
+--------------------------------------------------------------------------------
+Per-item grades were cached by key in one directory. Code that globbed the whole
+directory merged grades from other models and reported 19 forbidden-request
+compliances for a model with a measured refusal rate of 1.000. The contradiction
+is what exposed it -- there was no error. Key cache reads to a specific log; never
+aggregate across a cache directory. A helper elsewhere that deleted low-parse
+cache files by glob would have silently destroyed another run's grades.
+
+6. CROSS-CHECKS THAT EARNED THEIR COST
+--------------------------------------------------------------------------------
+* Second judge on identical logs: max disagreement 1.3 points. Converts "how
+  much of this is your grader?" from an objection into a measured quantity.
+* Placebo condition: a neutral, non-safety wrapper raised refusal 82.8% -> 88.5%.
+  Without it, "safety instructions work" is indistinguishable from "instructions
+  work". It is the cheapest arm and the one that makes the others interpretable.
+* Per-item divergence: aggregates hid the mechanism. Abliteration moved 83
+  prompts one way and 1 the other (a single lowered threshold); a prompt attack
+  moved 32 one way and 19 the other (perturbation, p=0.09). Same kind of headline
+  gap, completely different mechanism, visible only per item.
+* Check what the judge is READING. One jailbreak mandates a decoy refusal before
+  the real answer; grading the raw completion scores the preamble, not the reply.
+
+7. PROCESS HAZARDS (SHARED MACHINE, LONG UNATTENDED RUNS)
+--------------------------------------------------------------------------------
+Three distinct mechanisms, all hit in one session:
+* Edits do not reach a RUNNING bash script -- it holds its parsed copy. Restart
+  at a safe boundary. Resume markers make that free.
+* Truncate-and-rewrite CORRUPTS a script bash is still reading incrementally.
+  Use rename-based writes (sed -i, os.replace); verify the inode changed.
+* A trap does NOT fire while a foreground child is running. SIGTERM to an
+  orchestrator mid-`inspect eval` does nothing until the child returns. Kill the
+  process tree if you need to stop now.
+Also: never kill a server you did not start. A bare
+`pgrep -x llama-server | xargs kill` destroyed another session's run. Record the
+PID you launched and kill only that; wait for VRAM held by others, never reclaim
+it. And tell collaborators when you restart -- a gate keyed to your old PID fails
+silently and invisibly.
+
+8. TOOL-SPECIFIC TRAPS WORTH REMEMBERING
+--------------------------------------------------------------------------------
+* `inspect eval --timeout` does NOT set the HTTP client timeout. The OpenAI SDK
+  default (600s) silently caps long generations. Pass -M client_timeout=N.
+* llama-server divides context across parallel slots: --parallel 4 with -c 32768
+  gives each request 8192.
+* Passing -ngl explicitly DISABLES llama.cpp's auto-fit. `llama-fit-params`
+  measures the real ceiling instead of predicting it.
+* The naive KV-cache formula is wrong for hybrid attention/SSM models. It
+  predicted 8.7 GB at 65k context against ~2.1 GB measured, because only ~16 of
+  65 layers cache. Trust a load test.
+* `hf download` raises a traceback ending in `click.exceptions.Exit: 0` on
+  SUCCESS, which the wrapper turns into process exit 1. Scripts branching on its
+  status will read failure on success.
+* GGUF arch strings differ from HF model_type ("qwen35" vs "qwen3_5"). Grepping
+  the wrong spelling will tell you a supported model is unsupported.
+
+9. PUBLISHING AND PROVENANCE
+--------------------------------------------------------------------------------
+* Removing something in a new commit does NOT remove it from a public repo.
+  Force-pushing a rewrite leaves the old commits fetchable by SHA. Only deleting
+  and recreating the repository removes them. Verified by fetching the old SHA
+  before and after.
+* Commit metadata is content: author email is public on every commit of a public
+  repo. GitHub also records the PUSHER in its public events feed, so pushing from
+  the wrong account links identities regardless of commit authorship.
+* Decide what is publishable before the first commit, not after. Two history
+  rewrites were needed here -- one for identity, one for jailbreak text -- and the
+  second was only necessary because the first question was asked late.
+* Keep harmful prompt text out of the repo but reproducible locally: cite the
+  paper, withhold the text, gitignore the working copy.
+
+10. HONEST REPORTING
+--------------------------------------------------------------------------------
+* State what a number licenses. "At a matched 65,536 context this model fails
+  the task" is supportable; "this model is worse at molecular cloning" is not,
+  when it never answered.
+* A pilot is not a benchmark. 0.467 on 15 samples does not become a reportable
+  score by being encouraging.
+* Do not tune until the number looks plausible and then report it. Fix causes you
+  can name, record every parameter changed, and say which comparisons are no
+  longer like-for-like.
+* Contradictions are the cheapest bug detector available. Every silent failure in
+  this project was caught because two numbers disagreed -- refusal rate 1.000
+  against 19 compliances, a sub-chance MCQ score, a 2048-token "refusal".
+================================================================================
