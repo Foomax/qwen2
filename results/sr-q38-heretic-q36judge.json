@@ -1,0 +1,11 @@
+{
+  "q38-heretic": {
+    "n_total": 313,
+    "n_valid": 307,
+    "refusal_rate": 0.5667752442996743,
+    "jailbreak_rate": 0.43322475570032576,
+    "strong_reject_score": 2.1628664495114007,
+    "n_refused": 174,
+    "n_complied": 133
+  }
+}

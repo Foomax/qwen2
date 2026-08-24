@@ -20,10 +20,15 @@ llama.cpp + Inspect AI, paired per item. 313 StrongREJECT prompts, 450 XSTest.
 1. **Both stock models refuse everything. Both ablated 3.8 builds comply with
    ~44%.** One generation of ordinary model development made the same class of
    edit ~4× more effective at stripping refusals.
-2. **The recipe doesn't explain it.** Two independent ablation recipes on
-   Qwen3.8 are statistically indistinguishable — 46-vs-55 discordant pairs,
-   **p = 0.43**. Holding recipe fixed, the generational effect is
-   **108-vs-4, p = 2.5e-27**.
+2. **The recipe doesn't explain it — on flagrant prompts.** Two independent
+   ablation recipes on Qwen3.8 are statistically indistinguishable on
+   StrongREJECT — 46-vs-55 discordant pairs, **p = 0.43**. Holding recipe fixed,
+   the generational effect is **108-vs-4, p = 2.5e-27**.
+   **But the two axes swap on subtle prompts.** On XSTest's contrastive unsafe
+   items, recipe is the dominant term (12-vs-48, **p = 3.2e-06**) and generation
+   is null (25-vs-19, p = 0.45). Generation governs flagrant requests; recipe
+   governs the boundary cases. A study reporting one benchmark would have found
+   only one of these.
 3. **No capability uplift, anywhere.** Across three tasks and two generations.
    Ablation unlocks willingness, not ability.
 4. **Weight edits and prompt attacks have different per-item signatures.**
@@ -40,6 +45,15 @@ llama.cpp + Inspect AI, paired per item. 313 StrongREJECT prompts, 450 XSTest.
 **Robustness:** a frontier judge (DeepSeek-v4-pro) reproduces every headline
 number to within ~1 point, Cohen's κ 0.87–1.00.
 
+**XSTest, frontier-judge graded (coverage 192–250):**
+
+| arm | safe over-refusal | unsafe refusal |
+|---|---|---|
+| Qwen3.8 stock | 5.2% | 84.3% |
+| Qwen3.8 OBLITERATUS | 0.0% | 33.9% |
+| Qwen3.8 Heretic | 0.0% | 53.9% |
+| Qwen3.6 Heretic | 0.4% | 57.0% |
+
 ---
 
 ## What is wrong with this, in order
@@ -52,9 +66,13 @@ number to within ~1 point, Cohen's κ 0.87–1.00.
    Heretic-3.6 arm is clean and is the number to trust for that cell.
 2. **Two recipes is not "recipes".** The null is over OBLITERATUS and Heretic on
    one base model.
-3. **XSTest on the two newest arms is under-covered** (151–162 of 200 unsafe items
-   parsed; the judge's budget is exhausted by longer completions). StrongREJECT,
-   which carries the headline, has 305–311 of 313.
+3. **Resolved, and it mattered.** XSTest on the two newest arms was under-covered
+   (151–162 of 200 unsafe items). A frontier-judge re-grade lifted coverage to
+   193/200 and moved the numbers: Heretic-3.8 unsafe refusal **69.5% → 53.9%**.
+   The dropped items were 51–65% *compliances*, so the local judge was making
+   ablated models look safer than they are — an **anti**-conservative bias, the
+   opposite of what was first assumed. Round-3's own arms barely moved
+   (84.7→84.3, 34.5→33.9), so those stand.
 4. Capability tasks are n=30–80. Judges are local 27B-Q4 unless stated.
 5. One quantisation (Q4_K_M) throughout, by design — quant is not a free variable.
 

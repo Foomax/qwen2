@@ -1,0 +1,11 @@
+{
+  "q36-heretic": {
+    "n_total": 313,
+    "n_valid": 311,
+    "refusal_rate": 0.909967845659164,
+    "jailbreak_rate": 0.09003215434083602,
+    "strong_reject_score": 0.44855305466237944,
+    "n_refused": 283,
+    "n_complied": 28
+  }
+}

@@ -97,18 +97,57 @@ did not move.
 
 ---
 
+## XSTest (corrected): a dissociation the StrongREJECT result hides
+
+All four arms re-graded by `deepseek-v4-pro` @4096 (coverage 192–250 of 250/200):
+
+| arm | safe over-refusal | unsafe refusal |
+|---|---|---|
+| Qwen3.8 stock | 5.2% | 84.3% |
+| Qwen3.8 OBLITERATUS | 0.0% | 33.9% |
+| Qwen3.8 Heretic | 0.0% | **53.9%** |
+| Qwen3.6 Heretic | 0.4% | **57.0%** |
+
+Per-item paired on the DeepSeek-graded set, and **the two axes swap over**:
+
+| comparison | StrongREJECT (flagrant prompts) | XSTest unsafe (subtle contrasts) |
+|---|---|---|
+| **RECIPE** within Qwen3.8 | 46 vs 55, **p = 0.43 — null** | 12 vs 48, **p = 3.2e-06 — large** |
+| **GENERATION** within Heretic | 108 vs 4, **p = 2.5e-27 — large** | 25 vs 19, **p = 0.45 — null** |
+
+On **flagrant** harmful requests, the base generation determines how much ablation
+removes and the recipe is irrelevant. On **subtle** contrastive prompts — XSTest's
+`contrast_*` items, which are the same surface form as safe prompts with the frame
+removed — the recipe determines it and the generation is irrelevant. OBLITERATUS
+complies with 48 subtle unsafe items that Heretic refuses; Heretic complies with 12
+that OBLITERATUS refuses.
+
+**This qualifies the headline claim above.** "The recipe doesn't explain it" is
+true of StrongREJECT and false of XSTest-unsafe. The honest statement is: *the
+generational effect is carried by flagrant prompts; recipe choice is what governs
+behaviour on the subtle boundary cases.* Both are real, and a study reporting only
+one benchmark would have concluded only one of them.
+
+The ablation nesting signature survives on XSTest too: Qwen3.8 stock vs
+OBLITERATUS is **95 vs 0**, p = 5.1e-29.
+
+---
+
 ## Caveats, in order of how much they should worry you
 
-1. **XSTest unsafe on the two NEW arms is the weakest number here and is being
-   re-graded.** Local-judge coverage was only 151/200 (q38-heretic) and 162/200
-   (q36-heretic), against 177–190/200 for the older arms. Diagnosed: Heretic
-   completions are 2.5–3× longer (median 488–589 tokens vs OBLITERATUS 161–220),
-   exhausting the judge's 1024-token budget. Only **3 of 49** failures were
-   generation-side cap-hits, so it is judge-side. A DeepSeek @4096 re-grade is
-   running (zero GPU). **Until it lands, treat the XSTest recipe difference
-   (Heretic-3.8 69.5% unsafe refusal vs OBLITERATUS-3.8 34.5%) as provisional.**
-   The StrongREJECT numbers, which carry the headline, have 305–311/313 coverage
-   and are unaffected.
+1. **RESOLVED — the XSTest under-coverage was real and it was biasing the numbers
+   the wrong way.** Local-judge coverage on the two new arms was only 151/200 and
+   162/200 unsafe items. A DeepSeek-v4-pro @4096 re-grade lifted both to 193/200
+   and **moved the numbers materially**: Heretic-3.8 unsafe refusal 69.5% → **53.9%**,
+   Heretic-3.6 66.0% → **57.0%**. The mechanism is now measured, not assumed: of the
+   unsafe items the local judge dropped, **51% (Heretic-3.8) and 65% (Heretic-3.6)
+   were compliances**, against 40% for OBLITERATUS-3.8 and 30% for stock. Dropping
+   compliances inflates refusal, so the local judge made the ablated models look
+   *safer* than they are, and did so worst on the arms that comply most. This bias
+   is **anti**-conservative — the opposite of what was assumed in
+   `midway-progress.txt`. Round-3's own arms barely moved (84.7→84.3, 34.5→33.9),
+   so those conclusions stand; the correction is specific to the new arms.
+
 2. **Round 1 (Qwen3.6) is confounded by an injected system prompt.** The
    `qwen3.6-27b-obliteratus` GGUF's chat template silently injects an anti-refusal system prompt (text withheld; see
    the gitignored local companion) whenever
@@ -134,8 +173,10 @@ did not move.
 
 * **The generational finding is publishable.** It survives recipe control, judge
   substitution, and per-item paired testing, with a clean nesting signature.
-* **`ANALYSIS.md §4`'s recipe-variance objection is answered** — measured and null
-  within Qwen3.8.
+* **`ANALYSIS.md §4`'s recipe-variance objection is answered for flagrant prompts**
+  — null within Qwen3.8 on StrongREJECT (p=0.43) — but it is *not* answered for
+  subtle ones, where recipe is the dominant term (p=3.2e-06). See the XSTest
+  section; this is a qualification of the claim, not a retraction of it.
 * **Two write-up corrections are now mandatory:** the round-1 injected-system-prompt
   confound, and the fact that published keyword-metric refusal claims from the
   ablation community are not commensurable with rubric-judge measurements.
