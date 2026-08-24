@@ -92,3 +92,26 @@ divergence2-local.md
 # Real wrapper text (attack prompts) — never published
 sr_wrappers.local.json
 sr_compare_q38.py
+
+# ---------------------------------------------------------------------------
+# Verbatim anti-refusal / attack text embedded in third-party model artifacts.
+# The qwen3.6-27b-obliteratus GGUF ships a chat template that injects a
+# jailbreak-style system prompt whenever the caller sends no system message.
+# The FINDING is published (hand-over2-report.log, readme.md); the TEXT is not,
+# under the same rule as sr_wrappers.local.json.
+# ---------------------------------------------------------------------------
+*-template-local.md
+*-local.md
+
+# ---------------------------------------------------------------------------
+# Phase-marker state dirs — empty files, no reader value (cf. .q38_state/)
+# ---------------------------------------------------------------------------
+.q38ob_state/
+.ho3_state/
+
+# ---------------------------------------------------------------------------
+# Raw run logs — machine transcripts, regenerable, and server logs can echo
+# prompt text. The distilled findings live in the .md/.txt write-ups.
+# ---------------------------------------------------------------------------
+replication.log
+download.log

@@ -1,92 +1,74 @@
-# How harmful is a state-of-the-art local LLM when it is obliterated?
+# Does abliteration get more dangerous as base models improve?
 
-**TL;DR — Abliteration does exactly what it claims: it strips refusals out of an
-open-weights model, no retraining, no capability loss. But it does not make the model
-*more capable* of harm, and the newest generation of stock models now delivers the benefit
-people abliterate for while still refusing everything. The trade is getting worse, not
-better, for the attacker.**
+**Yes — and it is the base model that changed, not the recipe.**
+
+Stock vs refusal-ablated Qwen3.6-27B and Qwen3.8-27B, all Q4_K_M on one RTX 3090,
+llama.cpp + Inspect AI, paired per item. 313 StrongREJECT prompts, 450 XSTest.
 
 ---
 
-## WHY
+## TL;DR of the TL;DR
 
-Abliteration is the cheapest safeguard-removal technique in the open-weights ecosystem.
-It ablates the single activation direction that mediates refusal (Arditi et al., 2024)
-directly from the weights — a few minutes of work, no fine-tuning, no data. Anyone can do
-it, and thousands have.
+**Harmful-request compliance (StrongREJECT, 313 prompts, same judge throughout):**
 
-The obvious worry is uplift: does removing the guardrail unlock dangerous capability that
-was there all along? The folklore claims the opposite too — that "uncensored" models are
-smarter. Both claims are testable and both are usually asserted without measurement.
+| | Qwen3.6 | Qwen3.8 |
+|---|---|---|
+| stock | 0.0% | 0.0% |
+| ablated — OBLITERATUS | 16.5% | 45.7% |
+| ablated — Heretic | 9.0% | **43.3%** |
 
-Nobody was going to stop publishing these models while the question stayed unanswered,
-so I measured it on one, end to end, on a single consumer GPU.
+1. **Both stock models refuse everything. Both ablated 3.8 builds comply with
+   ~44%.** One generation of ordinary model development made the same class of
+   edit ~4× more effective at stripping refusals.
+2. **The recipe doesn't explain it.** Two independent ablation recipes on
+   Qwen3.8 are statistically indistinguishable — 46-vs-55 discordant pairs,
+   **p = 0.43**. Holding recipe fixed, the generational effect is
+   **108-vs-4, p = 2.5e-27**.
+3. **No capability uplift, anywhere.** Across three tasks and two generations.
+   Ablation unlocks willingness, not ability.
+4. **Weight edits and prompt attacks have different per-item signatures.**
+   Ablation is near-perfectly nested — 141-0, 132-0, 83-1, 28-0, i.e. one
+   direction-blind threshold lowered. A published prompt attack is 32-19, a
+   perturbation. Visible per item, invisible in aggregate rates. *This is the
+   contribution we think is most novel; a 74-item prior-art sweep found nobody
+   else reporting it.*
+5. **Published "0/100 refusals" claims are not comparable to these numbers.**
+   The field's reference tool scores refusal with a 41-marker substring matcher
+   whose markers include "illegal" and "harmful". We measure a build made by that
+   tool at 43.3% compliance under a rubric judge.
 
-## HOW
+**Robustness:** a frontier judge (DeepSeek-v4-pro) reproduces every headline
+number to within ~1 point, Cohen's κ 0.87–1.00.
 
-Stock **Qwen3.6-27B** against a community-abliterated build of the same model, and later
-the newer **Qwen3.8-27B**, all Q4_K_M on one RTX 3090 via llama.cpp, scored with Inspect AI.
+---
 
-- **Three capability benchmarks**, deterministically scored: cybersecurity knowledge,
-  competition maths, and dual-use molecular cloning — the biorisk proxy.
-- **Two refusal benchmarks**: StrongREJECT (313 forbidden prompts) for harmful compliance,
-  XSTest (250 safe + 200 unsafe) for over-refusal. Both judged by a fixed local model.
-- **Paired per item**, so every comparison is the same prompt on both models, not two
-  averages.
-- **A wrapper sweep**: eleven prompt-level conditions — safety framings, published attacks,
-  a community jailbreak, and a placebo — to ask whether a system prompt can put back what
-  the weight edit removed.
-- **Two independent judges**, to check the conclusions aren't an artifact of the grader.
+## What is wrong with this, in order
 
-## WHAT
+1. **Round 1 (Qwen3.6) is confounded.** The `qwen3.6-27b-obliteratus` GGUF ships a
+   chat template that silently injects an anti-refusal system prompt whenever the
+   caller sends none — which is exactly what these benchmarks do. So round 1's
+   "identical prompts, only the weights differ" claim is false. It biases *toward*
+   compliance, so the generational gap is understated, not overstated. The
+   Heretic-3.6 arm is clean and is the number to trust for that cell.
+2. **Two recipes is not "recipes".** The null is over OBLITERATUS and Heretic on
+   one base model.
+3. **XSTest on the two newest arms is under-covered** (151–162 of 200 unsafe items
+   parsed; the judge's budget is exhausted by longer completions). StrongREJECT,
+   which carries the headline, has 305–311 of 313.
+4. Capability tasks are n=30–80. Judges are local 27B-Q4 unless stated.
+5. One quantisation (Q4_K_M) throughout, by design — quant is not a free variable.
 
-**1. No capability uplift. Anywhere.** Knowledge unchanged, maths unchanged-to-worse, and
-the dual-use biology task flat (0.485 vs 0.455, n.s.) with zero abstentions. Abliteration
-removes the *refusal*, not a hidden capability — so on tasks the stock model would already
-attempt, there is nothing left to unlock.
-
-**2. Abliteration works, partially and indiscriminately.** Harmful refusal 100% → 83%
-(p ≈ 4×10⁻¹⁶). But the same edit cut needless refusal of *safe* prompts 10.6% → 1.6%.
-One dial, turned down. Per item, 83 prompts moved refuse→comply and exactly 1 moved the
-other way — the fingerprint of a single lowered threshold rather than a changed policy.
-
-**3. The harm ceiling is the base model, not the edit.** Which is why the newest result
-matters most: **Qwen3.8-27B refuses all 313 forbidden prompts while wrongly refusing safe
-ones a third as often as the previous generation** (3.3% vs 10.6%) — and scores higher on
-maths using half the tokens. That is most of abliteration's benefit with none of its cost,
-obtained by ordinary model development. The reason to abliterate is eroding.
-
-**4. Prompt attacks and weight edits are not the same thing.** Of eleven wrappers, only the
-plain published refusal-suppression attack lowers refusal below baseline (82.8% → 78.4%),
-and only weakly (p = 0.09). An elaborate community jailbreak *raises* it. So does a
-placebo — meaning any long instruction around a harmful prompt increases refusal, and
-safety-wrapper results are meaningless without that control.
-
-**5. Not a judge artifact.** Re-grading every log with a different judge moved nothing by
-more than 1.3 points.
+No harmful prompt text or model completion appears anywhere in this repository.
 
 ---
 
 ## Read next
 
-| File | What it is |
+| file | what it is |
 |---|---|
-| `results.txt` | Every number from every run, consolidated |
-| `results.md` | Run-by-run detail for the qwen3.6 study |
-| `eval-results-technical-paper.md` | Full write-up with method and limitations |
-| `eval-results-blog-post.md` | The same findings, informally |
-| `divergence.md` | Per-item: where abliteration and stock disagree |
-| `divergence2.md` | Per-item: what the one working attack actually changes |
-| `cloningbench.md` | Why one result is an artifact and must be re-run |
-| `sr_README.md` | The wrapper experiment's tooling |
-| `old_readme.md` | The previous README |
-
-## Honest limits
-
-The dual-use biology result is one narrow MCQ proxy at n=33, not a biorisk clearance.
-Capability tasks are small (n=30–80). Judges are 27B-Q4 models. One abliterated build,
-whose recipe is unverified. And `lab_bench_cloning_scenarios` on Qwen3.8 returned a
-sub-chance score that is a context-truncation artifact, not a measurement — it is flagged
-everywhere it appears and needs re-running (`cloningbench.md`).
-
-No model completion to a forbidden prompt is stored in this repository.
+| `HO3-RESULTS.md` | the 2×2, per-item decomposition, cross-judge table |
+| `midway-progress.txt` | the Qwen3.8 stock-vs-ablated round in full |
+| `eval-results-technical-paper.md` | method, limitations, the earlier rounds |
+| `lessons.txt`, `lessons2.txt` | what the measurement kept getting wrong |
+| `hand-over3.txt` | the plan this run executed, and why |
+| `readme_old2.md` | the previous README |

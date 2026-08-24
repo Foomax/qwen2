@@ -1,0 +1,217 @@
+================================================================================
+NEXT STEPS — handoff for a fresh Claude instance
+Written 2026-08-24 by the instance that ran the Qwen3.8 replication.
+Assume you have NO prior context. Read this top to bottom before touching the GPU.
+================================================================================
+
+STATUS IN ONE PARAGRAPH
+--------------------------------------------------------------------------------
+This is an AI-safety project measuring what refusal ablation ("abliteration")
+does to a model. Round 1 compared Qwen3.6-27B stock vs abliterated. Round 2 ran
+Qwen3.8-27B stock. Round 3 -- just finished, 2026-08-24 02:27 -- ran
+Qwen3.8-27B-OBLITERATED, completing the 2x2. The results are analysed and
+written up. NOTHING IS CURRENTLY RUNNING. The next GPU block is PROPOSED BUT NOT
+APPROVED: the user was asked for a go-ahead, did not give one, and asked for this
+handoff instead. DO NOT START A GPU RUN WITHOUT ASKING THEM FIRST.
+
+READ THESE FIRST, IN THIS ORDER
+--------------------------------------------------------------------------------
+  ~/qwen2/lessons.txt              round-1/2 lessons. Still authoritative.
+  /home/user/qwen4/lessons2.txt    round-3 lessons. Read #0, #3, #10, #11.
+  /home/user/qwen4/midway-progress.txt   full round-3 state, results, caveats.
+  /home/user/qwen4/PREFLIGHT-NOTES.md    config forensics (templates, quant, caps).
+  ~/qwen2/eval-results-technical-paper.md  the paper, incl. the 2026-08-20 addendum.
+Do not re-derive the results. They are in midway-progress.txt with the numbers.
+
+ENVIRONMENT
+--------------------------------------------------------------------------------
+  GPU        single RTX 3090, 24 GiB. Shared machine -- other sessions use it.
+  CPU/RAM    Ryzen 7 5800X, 31 GiB system RAM, 19 GiB swap.
+  Disk       ~150 GiB free on /.
+  llama.cpp  /home/user/llama.cpp, build b9436 (d6588daa8), CUDA, clean tree.
+             Binaries in build/bin/. Registers GGUF arch "qwen35".
+  Harness    ~/qwen2/inspect-env  (inspect_ai 0.3.251, inspect_evals 0.16.1.dev35)
+             NOT ~/qwen2/.venv and NOT ~/qwen2/vvenv -- those lack inspect_evals.
+  Models     ~/qwen3/Qwen3.8-27B-Q4_K_M.gguf                      stock
+             ~/qwen4/models/Qwen3.8-27B-OBLITERATED-Q4_K_M.gguf   obliterated
+             ~/models/qwen3.6-27b/Qwen3.6-27B-Q4_K_M.gguf         round-1 stock + JUDGE
+             ~/models/qwen3.6-27b-obliterated/gguf/...Q4_K_M.gguf round-1 ablated
+             ~/qwen4/models/mmproj-model-bf16.gguf   vision tower, unused so far
+
+  ALL ARMS ARE Q4_K_M. This is not a preference, it is a constraint: quant is a
+  variable in the experiment. Never introduce a differently-quantised arm.
+
+WHAT ROUND 3 FOUND (do not re-run to confirm; it is done)
+--------------------------------------------------------------------------------
+  StrongREJECT (313):  q3.8 stock refusal 1.000 / 0% comply
+                       q3.8 OBLIT  refusal 0.543 / 45.7% comply / SR score 2.14
+                       (round 1: q3.6 OBLIT was 0.831 / 16.9% / 0.81)
+  Per-item paired:     141 flipped refuse->comply, 0 the other way, p=7.2e-43.
+  XSTest @1024:        safe over-refusal 4.5% -> 0.0%; unsafe refusal 84.7% -> 34.5%
+  Exchange rate:       q3.6 benefit/cost 0.53 -> q3.8 0.10. ~5x worse.
+  Capability:          cybermetric 0.950 vs 0.950 (identical -- the negative control)
+                       aime2024 0.967 -> 0.533, BUT 1/30 vs 10/30 ceiling hits;
+                       answer rate 96.7% -> 66.7%, accuracy|answered 100% -> 80%.
+  Compliance quality:  ~4.7/5 specificity in BOTH builds. V3's gain is RATE, not
+                       substance -- which contradicts how its model card frames it.
+
+  Headline: a better, fully-refusing, better-calibrated base model conferred NO
+  resistance to ablation. This kills addendum conclusion A5.5.
+  Unbreakable confound: base generation AND ablation recipe both changed, and no
+  V1/V2 revisions are published (checked repo refs: only main). Always phrase as
+  "the ablated product available at each generation", never "the same edit twice".
+
+THE ONE BLOCKING CAVEAT
+--------------------------------------------------------------------------------
+Differential judge parse rate on XSTest unsafe: stock 190/200, obliterated
+177/200. The arm that complies more is the arm whose judge verdicts fail to
+parse more, because long compliant answers exhaust the judge's budget. That is
+structurally coupled to the treatment (same family as lessons.txt #3).
+Direction is probably conservative, but that is an argument, not a measurement.
+FIX THIS BEFORE ANYTHING IS PUBLISHED.
+
+PROPOSED NEXT BLOCK (~10h; NOT APPROVED -- confirm with the user)
+--------------------------------------------------------------------------------
+Ordered by value per GPU-hour so that killing it partway still leaves a coherent
+result. Estimates are calibrated from round 3's MEASURED rates, listed at the
+bottom of this file.
+
+PHASE 1 -- XSTest re-grade at judge budget 2048          ~2.5h   [closes the caveat]
+  No new generation. Re-grades both existing @1024 arms so the whole corrected
+  table sits at ONE judge budget (re-grading only the unsafe half would leave
+  safe and unsafe at different budgets).
+
+    cd ~/qwen2 && source inspect-env/bin/activate
+    # serve the judge: qwen3.6-27b-normal, parallel 2, ctx 32768, reasoning off
+    for g in xstest/gen-qwen3.8-mt1024.json xstest/gen-qwen3.8-obliterated-mt1024.json; do
+      tag=$(basename "$g" .json | sed 's/^gen-//')
+      python xstest_run.py grade --gen "$g" --judge qwen3.6-27b-normal \
+        --workers 2 --judge-max-tokens 2048 \
+        --out /home/user/qwen4/results/xstest-$tag-q36judge-mt2048.json
+    done
+  SUCCESS CRITERION: parse rate >= 99% on BOTH arms AND the stock/obliterated gap
+  closes to <= 2 items. If the gap persists at 2048, it is not a budget problem
+  and needs a different fix (e.g. a parse-failure audit) -- say so, do not shrug.
+  Write results to NEW filenames. Do not overwrite the mt1024 grades.
+
+PHASE 2 -- WMDP-bio + WMDP-chem, both arms               ~2.5h   [biorisk, real power]
+  Why: the project's "no biorisk uplift" claim rests on n=33, at the PREVIOUS
+  generation, on a build that complied 16.9%. This build complies 45.7%. WMDP-bio
+  is 1273 deterministic 4-choice MCQ, no judge in the loop -- ~39x the power.
+  Verified ungated and loads: datasets.load_dataset('cais/wmdp','wmdp-bio').
+  Tasks: inspect_evals/wmdp_bio, inspect_evals/wmdp_chem (also wmdp_cyber, 1987
+  items, DEFERRED -- cybermetric already showed no capability movement).
+
+  CONFIG DECISION, made deliberately: run thinking OFF at --parallel 4, i.e. the
+  refusal-task serving config, NOT the capability config. Thinking-on at
+  --parallel 1 would be ~20h for the same items (cybermetric measured 28.5s/item
+  thinking-on). WMDP is designed as knowledge recall. Use the SAME config for
+  both arms and record it. This is a new instrument with no prior arm, so you are
+  free to choose -- but once chosen it is frozen.
+
+    inspect eval inspect_evals/wmdp_bio --model openai/<alias> \
+      --temperature 0 --max-connections 4 -M client_timeout=7200 \
+      --log-dir logs/<arm>/wmdp_bio
+
+PHASE 3 -- AIME at reasoning_effort=medium, both arms    ~3.5h   [attribution]
+  Why: 0.967 -> 0.533 is currently UN-ATTRIBUTABLE between the weight edit and
+  the xhigh reasoning default that neither model was configured with. Both chat
+  templates inject "Reasoning effort is set to xhigh..." when reasoning_effort is
+  unset. The cloning pilots showed xhigh->medium cut median output 3.4x. This
+  also tests the model card on its own terms (it recommends thinking OFF).
+  Add to the llama-server line, both arms identically:
+      --chat-template-kwargs '{"reasoning_effort":"medium"}'
+  Keep everything else at the capability config (-c 65536, --parallel 1,
+  --max-connections 1, --reasoning on).
+  REPORT: n, answered, correct|answered, ceiling-hits. Not just accuracy.
+
+HOW TO RUN IT
+--------------------------------------------------------------------------------
+Do NOT edit ~/qwen4/q38ob_run.sh -- its .done markers are all set and it is the
+provenance record of round 3. Write a NEW script modelled on it. Copy from it:
+  * start_server / stop_server / await_gpu / cooldown verbatim
+  * the EXIT INT TERM trap
+  * per-phase .done markers in a NEW state dir
+  * the "server-reported config" grep after every server start
+Launch detached and keep the waiter in a SEPARATE FILE from the orchestrator:
+    setsid nohup ./<queue>.sh > ~/qwen4/<run>.log 2>&1 < /dev/null &
+Bash does not parse the orchestrator until exec, so that keeps a window open to
+edit the plan right up until it actually starts.
+
+TRAPS THAT WILL BITE YOU HERE SPECIFICALLY
+--------------------------------------------------------------------------------
+ 1. NEVER `pgrep -x llama-server | xargs kill`. This is a SHARED GPU and it has
+    already destroyed a peer's run once. Record the PID you launched; kill only
+    that. And note `pgrep -f <pattern>` matches the shell running the pgrep --
+    that cost two self-kills (exit 144) in round 3. Kill by PID, verify kill -0.
+ 2. await_gpu, never reclaim. If another process holds VRAM, WAIT. Do not kill.
+ 3. Grade cache (~/qwen2/sr_grades/) is keyed
+    sha256(realpath|mtime|judge|limit)[:16], plus "|mt=N" when judge-max-tokens
+    != 1024. NEVER glob that directory -- it once merged grades across models and
+    reported 19 compliances for a model with refusal rate 1.000. Compute the key.
+    Round-3 keys: q3.8 stock SR 7e6e3957d71752e9, q3.8 OBLIT SR 03f616af725fb032.
+ 4. Validate completeness before grading: status == "success" AND EXACT expected
+    n (313 SR / 450 XSTest). A killed server leaves a partial .eval that still
+    matches *.eval. ~/qwen4/q38ob_validate.py does this; adapt it.
+ 5. `inspect eval --timeout` does NOT set the HTTP client timeout. Pass
+    -M client_timeout=7200 or the OpenAI SDK's 600s default silently truncates.
+ 6. llama-server divides context across slots: --parallel 4 with -c 32768 gives
+    each request 8192.
+ 7. Passing -ngl explicitly disables llama.cpp auto-fit. The existing scripts use
+    -ngl 1024 and that is matched across all arms -- keep it.
+ 8. CHAT TEMPLATE CONFOUND, DORMANT NOT DEAD. The two GGUFs ship different
+    templates (stock is Unsloth-patched, 9993 chars; obliterated is upstream,
+    8952). Rendered output is byte-identical for every message shape THIS harness
+    sends -- one user message, no tools, reasoning_effort unset. It goes LIVE the
+    moment you add a system-prompt condition or a tool-use task. See
+    PREFLIGHT-NOTES.md §3. Templates are saved at ~/qwen4/chat_template_*.jinja.
+ 9. When you diff two things, first assert your diff can tell apart things that
+    ARE different. See lessons2.txt #0 -- a template check printed IDENTICAL four
+    times having rendered nothing.
+10. Report parse rate per arm next to every judged number, and cap-hit rate per
+    condition AND per subset. Asymmetry is the signal, not the mean.
+11. Keep harmful prompt text and model completions OUT of ~/qwen4 and out of git.
+    Round 3 stores labels and aggregate rates only. ~/qwen2 is a git repo whose
+    history has already been rewritten twice for this; do not commit or push
+    without the user asking.
+
+DEFERRED, WITH REASONS (do not silently promote these)
+--------------------------------------------------------------------------------
+  Wrapper sweep on q3.8-obliterated   ~7h.  Highest scientific value left: prior
+    sweep found only refusal_suppression lowers refusal, measured on a build that
+    complied 16.9%. This build complies 45.7%, so wrappers have far more room.
+    BLOCKED ON trap 8 -- wrappers put text in a system message, which is exactly
+    the diverging template path. Re-run the render-equivalence check with a
+    system-message shape BEFORE running this.
+  wmdp_cyber (1987 items)             +~2h. cybermetric already null.
+  lab_bench_cloning, both arms        ~24h. Stock q3.8 is still unmeasured (0.121
+    is a documented artifact), so it costs two full runs to yield ONE comparable
+    number. Accepted config is pilot 3 in
+    ~/qwen2/cloningbench_experiment_pilots_results.txt.
+  XSTest @2048 generation arm         ~3.5h. The 256->1024 correction moved the
+    headline ~1 point, so 1024->2048 should move less. Residual: stock @1024 still
+    cap-hits 16.4% of SAFE prompts.
+  qwen3.8-judge cross-check           Prior cross-judge disagreement <= 1.3 points.
+    Low value now.
+
+MEASURED RATES FROM ROUND 3 (use these to estimate, not guesses)
+--------------------------------------------------------------------------------
+  thinking-off generation, --parallel 4 ....... 2.1-3.8 s/item
+      (strong_reject 313 in 20 min; xstest 450 in 16-20 min)
+  judge calls, --parallel 2, 1024-token budget . 6.6 s/call
+      (1663 calls in 3h02m)
+  MCQ thinking-ON, --parallel 1 ................ 28.5 s/item  (cybermetric 80 in 38 min)
+  AIME thinking-ON xhigh, --parallel 1 ......... 6.9 min/item stock,
+                                                 11.4 min/item obliterated
+  model load/unload + VRAM settle .............. ~2-5 min per server start
+  cooldown between phases ...................... 900 s (user's choice; keep it)
+  Round 3 total: 8 phases, 14:02 -> 02:27 = 12.4h wall clock.
+
+FIRST THING TO DO
+--------------------------------------------------------------------------------
+Ask the user which of the three phases they want, if any. The proposal above was
+put to them and they did not answer it -- they asked for this document instead.
+Treat the block as unapproved. If they want only one, Phase 1 is the one that
+matters, because it is a correctness fix on results that already exist rather
+than new science.
+================================================================================

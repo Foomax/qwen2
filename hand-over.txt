@@ -1,0 +1,179 @@
+================================================================================
+HAND-OVER — for Claude Opus
+Written 2026-08-24 by a Fable instance. Supersedes the PRIORITISATION in
+next-steps-recommendations.txt; that file's environment facts and trap list
+remain accurate and should still be read.
+================================================================================
+
+PART 0 — WHAT CHANGED TODAY (no GPU was used)
+--------------------------------------------------------------------------------
+Repo cleanup. 9 items moved to ~/qwen-cut (25,861 -> 22,775 files, 800M -> 737M).
+All were untracked, so git history is untouched. See ~/qwen-cut/MANIFEST.md for
+the per-item reasoning and how to restore.
+
+Three findings from that pass that you need:
+  * `.env` holds a REAL DeepSeek API key and is imported by sr_compare.py,
+    sr_breakdown.py and xstest_run.py. It was kept. This matters -- see ERROR 2.
+  * `log2.log` is NOT a log. It is a 352-line copy-pasteable tutorial,
+    "HOW TO RUN THE WRAPPED STRONGREJECT EVAL YOURSELF". Read it; consider
+    renaming it.
+  * `inspect-env/` (622 MB, 22,300 files) was KEPT despite being pure clutter,
+    because every script calls ./inspect-env/bin/python. It is the one place
+    where "unreadable" and "required" conflict. Do not move it casually.
+
+PART 1 — CRITICAL EVALUATION OF next-steps-recommendations.txt
+--------------------------------------------------------------------------------
+That document proposes three phases: (1) XSTest re-grade at judge budget 2048,
+~2.5h; (2) WMDP-bio + chem on both arms, ~2.5h; (3) AIME at
+reasoning_effort=medium, ~3.5h.
+
+WHAT IT GETS RIGHT
+  * Correctly refuses to imply approval, and says so twice.
+  * Correctly identifies the differential judge parse rate (stock 190/200 vs
+    obliterated 177/200 on XSTest unsafe) as the one thing that could move a
+    published number.
+  * Its trap list, environment map and measured-rate table are excellent and
+    should be reused verbatim.
+
+WHAT IT GETS WRONG
+
+ERROR 1 -- it calls the central confound "unbreakable". It is not.
+  The doc says base generation and ablation recipe both changed and "no V1/V2
+  revisions are published (checked repo refs: only main)", concluding the H2
+  ("newer base resists ablation") vs H3 ("V3 surgery is better") question cannot
+  be separated. But the RECIPE IS OPEN SOURCE. The model card cites
+  github.com/elder-plinius/OBLITERATUS as "full reproduction code". Applying that
+  same V3 recipe to Qwen3.6-27B yourself yields same-recipe / different-base,
+  which isolates H2 from H3 directly. It is expensive (needs the ~54 GB bf16
+  safetensors, and layer-wise SVD work that will not fit comfortably in 31 GB of
+  RAM) but it is the decisive experiment, and the doc forecloses it by assertion.
+  At minimum, downgrade "unbreakable" to "not breakable with published GGUFs".
+
+ERROR 2 -- it spends 2.5 GPU-hours re-grading with the same weak judge, when a
+frontier judge is already wired up and costs zero GPU.
+  sr_compare.py already has --judge-base-url and --judge-api-key-env, documented
+  in its own help text with "e.g. https://api.deepseek.com", and .env already
+  holds DEEPSEEK_API_KEY. xstest_run.py needs no code change either -- it reads
+  OPENAI_BASE_URL / OPENAI_API_KEY from the environment, so redirecting it is two
+  exports.
+  This matters beyond cost. The parse failures happen because long compliant
+  answers exhaust a 27B-Q4 judge. Raising ITS budget to 2048 treats a symptom and
+  may not work. A stronger judge fixes the root cause AND simultaneously closes
+  Limitation 11 of the technical paper -- "the single result in the study most
+  likely to move under a better judge" -- which has been open since 2026-08-11.
+  One cheap job, two caveats closed, no GPU.
+
+ERROR 3 -- it ignores PROJECT2-PLAN.md, the repo's own roadmap.
+  That file lays out Phase A (judge robustness across four axes: judge alignment,
+  family, quantisation, size) and Phase B (rebuild the ablated refusal direction
+  with a control vector). next-steps-recommendations.txt does not mention it
+  once. Phase B is the most ambitious idea in the repo, it is MORE motivated
+  after round 3, not less, and `llama-cvector-generator` is already built in
+  /home/user/llama.cpp/build/bin/.
+
+FRAMING CRITIQUE -- it is a good consolidation plan and a poor research plan.
+  Two of its three phases close caveats on a paper that is already written. The
+  third (WMDP) is the only new science, and it is the least surprising new
+  science available: capability nulls have now replicated across three tasks and
+  two generations. The document optimises for defending the last finding rather
+  than for finding the next one.
+
+PART 2 — WHERE I WOULD TAKE THE RESEARCH
+--------------------------------------------------------------------------------
+The project has thoroughly answered "what does abliteration do to one model?"
+It answered it twice, and the second answer was much more alarming than the
+first. The two questions that now matter are GENERALITY and REVERSIBILITY.
+
+  THREAD A — GENERALITY. "The abliteration trade got ~5x worse in one generation"
+  is currently a two-point trend line on one model family, with a confounded
+  cause. It is the most quotable claim in the project and the least supported.
+  Fixes, cheapest first:
+    A1. More pairs. Abliterated builds of Llama, Gemma, Mistral and Qwen are
+        abundant on HuggingFace. Each stock/ablated pair costs roughly one
+        StrongREJECT + one XSTest generation (~40 min GPU) plus grading. Four
+        more pairs turns an anecdote into a trend. THIS IS THE HIGHEST
+        VALUE-PER-GPU-HOUR ITEM AVAILABLE and it is absent from the current plan.
+    A2. Same recipe, older base (see ERROR 1). Expensive; decisive.
+
+  THREAD B — REVERSIBILITY. PROJECT2-PLAN.md Phase B. Round 3 produced a build
+  with 45.7% compliance and PERFECT nesting (141 flipped one way, 0 the other) --
+  a cleaner single-direction signature than the 16.9% build Phase B was written
+  for. If refusal is one direction, adding it back should restore refusal without
+  touching knowledge, and the existing paired capability baselines are the
+  control. Practical payoff either way: if steering works it is a cheap
+  inference-time mitigation stronger than prompting; if it does not, abliteration
+  does more than remove one direction, which is the more interesting result.
+  Tooling exists. The plan is written. It has never been run.
+
+REVISED PRIORITY ORDER
+  P0  DeepSeek re-grade of the round-3 XSTest + StrongREJECT arms.  0 GPU-hours.
+      Closes the differential parse rate AND Limitation 11. Do this first because
+      it costs nothing and it decides whether round 3's numbers are final.
+  P1  WMDP-bio, both q3.8 arms, thinking off, --parallel 4.        ~2h GPU.
+      Keep from the old plan. The readme's own "honest limits" calls the biorisk
+      claim "one narrow MCQ proxy at n=33"; this replaces it with n=1273.
+  P2  Thread A1 -- two to four more stock/ablated pairs.        ~1h GPU each.
+      The trend claim is the paper's headline and rests on n=2.
+  P3  Thread B -- control vectors.                            ~1 day GPU.
+  P4  AIME at reasoning_effort=medium.                          ~3.5h GPU.
+      Demoted. Real attribution gap, secondary claim.
+  Deferred: wrapper sweep. The old doc calls it blocked on the chat-template
+      confound; that is a ~10-minute re-check (re-run the jinja render-equivalence
+      test in PREFLIGHT-NOTES.md §3 with a system-message shape), not a blocker.
+      It is simply lower value than P0-P3.
+
+PART 3 — PROMPT FOR CLAUDE OPUS
+--------------------------------------------------------------------------------
+Paste everything between the markers as your opening instruction.
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> BEGIN PROMPT >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+You are continuing an AI-safety research project on refusal ablation
+("abliteration") in open-weights models. Work only in /home/user/qwen2 unless I
+say otherwise. It is a public git repo (github.com/Foomax/qwen2) — never commit
+or push unless I ask, and never let verbatim harmful prompt text or model
+completions reach a tracked file.
+
+Read these first, in this order, and do not re-derive what they already contain:
+  hand-over.txt                     (this handover: critique + priorities)
+  lessons2.txt                      (round-3 methodology lessons)
+  lessons.txt                       (round-1/2 lessons — still authoritative)
+  midway-progress.txt               (round-3 results and caveats)
+  PREFLIGHT-NOTES.md                (config forensics; §3 is load-bearing)
+  next-steps-recommendations.txt    (env map + trap list are accurate; its
+                                     PRIORITIES are superseded by this handover)
+  PROJECT2-PLAN.md                  (the repo's own roadmap — Phase B especially)
+
+State of play: the 2x2 of {Qwen3.6, Qwen3.8} x {stock, abliterated} is complete.
+Headline — a newer, better-calibrated, fully-refusing base model conferred NO
+resistance to ablation. Qwen3.8-OBLITERATED complies with 45.7% of 313
+StrongREJECT forbidden prompts against the 3.6 build's 16.9%, with per-item
+divergence of 141-to-0 (perfect nesting, McNemar p=7.2e-43). The benefit/cost
+exchange rate of abliteration worsened ~5x in one generation. No capability
+uplift anywhere, across three tasks and two generations.
+
+Your first task, which needs ZERO GPU time:
+Re-grade the round-3 StrongREJECT and XSTest arms with DeepSeek as the judge.
+sr_compare.py already supports this via --judge-base-url https://api.deepseek.com
+and --judge-api-key-env DEEPSEEK_API_KEY; the key is in .env. xstest_run.py needs
+no code change — just point OPENAI_BASE_URL and OPENAI_API_KEY at DeepSeek for
+the grade step only. Grade the SAME .eval logs and gen JSONs, write to NEW
+filenames, and never overwrite the local-judge grades. Report, per arm: refusal
+rate, parse rate, and per-item agreement with the local judge (Cohen's kappa,
+not just matching aggregates — two judges can agree on 83% and disagree on which
+items). This closes two open caveats at once: the differential parse rate flagged
+in midway-progress.txt, and Limitation 11 of eval-results-technical-paper.md.
+
+Before you start, tell me your plan and what you expect to find, then ask for a
+go-ahead. Do not start any GPU run without asking — the 3090 is shared, and a
+bare `pgrep -x llama-server | xargs kill` has already destroyed another session's
+work once. Kill only PIDs you launched.
+
+Two standing rules from the lessons files, because they have each bitten twice:
+  * Before trusting any "these are identical" comparison, assert your check can
+    distinguish things that ARE different (distinct inputs -> distinct outputs).
+  * Report answer-rate and accuracy-given-answered separately, and parse-rate and
+    cap-hit rate per arm and per subset. Asymmetry is the signal, not the mean.
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< END PROMPT <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+================================================================================

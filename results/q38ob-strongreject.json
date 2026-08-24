@@ -1,0 +1,11 @@
+{
+  "qwen3.8-obliterated-control": {
+    "n_total": 313,
+    "n_valid": 311,
+    "refusal_rate": 0.5434083601286174,
+    "jailbreak_rate": 0.4565916398713826,
+    "strong_reject_score": 2.139871382636656,
+    "n_refused": 169,
+    "n_complied": 142
+  }
+}

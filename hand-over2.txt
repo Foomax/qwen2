@@ -1,0 +1,151 @@
+================================================================================
+HAND-OVER 2 — literature and prior-art sweep
+Written 2026-08-24. Companion to hand-over.txt.
+Purpose: find out who else has done this, before spending more GPU on it.
+================================================================================
+
+WHY THIS EXISTS
+--------------------------------------------------------------------------------
+The project has a strong, quotable, two-generation result and, as far as the
+repo shows, has never been checked against prior art. eval-results-technical-
+paper.md cites six references, five of which are the benchmarks themselves plus
+Arditi et al. Nobody has asked: who else measured an abliterated model, what did
+they find, and where does this study agree or disagree with them?
+
+That question is cheap to answer and it changes what is worth running next. If
+four other people have already published "no capability uplift", then Thread A
+in hand-over.txt (generality across model families) is the contribution and WMDP
+is a footnote. If nobody has published a generational comparison, then the ~5x
+exchange-rate collapse is the headline and should be written up before more
+benchmarks are run.
+
+Run this BEFORE committing the GPU time proposed in hand-over.txt.
+It needs no GPU and no local model.
+
+--------------------------------------------------------------------------------
+PROMPT FOR CLAUDE OPUS — paste everything between the markers
+--------------------------------------------------------------------------------
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> BEGIN PROMPT >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+Do a prior-art sweep for an AI-safety project on refusal ablation
+("abliteration") of open-weights LLMs. Read /home/user/qwen2/hand-over.txt first
+for what the project actually found, so you can judge relevance rather than
+keyword-match. No GPU is needed for any of this.
+
+GOAL
+Collect the README of every SIMILAR or ADJACENT GitHub project, and the full text
+of every relevant LessWrong / Alignment Forum article, into ~/similar-projects.
+Then analyse the corpus.
+
+SCOPE — what counts
+  SIMILAR   measuring or performing refusal ablation / abliteration; evaluating
+            "uncensored" or safety-stripped open-weight models; reversing or
+            restoring refusal behaviour.
+  ADJACENT  refusal-direction and activation-steering work; control vectors and
+            representation engineering; safety degradation from fine-tuning;
+            tamper-resistant safeguards; over-refusal measurement; open-weight
+            dual-use capability evaluation; LLM-judge reliability for refusal.
+  OUT       general jailbreak-prompt collections with no measurement, model
+            weight mirrors with no analysis, prompt-injection-only work.
+
+SEARCH TERMS — run these, and follow good hits outward via their own citations
+and "related work" sections rather than only keyword-searching:
+  abliteration | abliterated | obliterated model | refusal ablation
+  refusal direction | "mediated by a single direction" | orthogonalization refusal
+  uncensored LLM evaluation | safety-stripped open weights
+  StrongREJECT | XSTest | over-refusal | exaggerated safety | WMDP
+  control vector | activation steering refusal | representation engineering
+  safety fine-tuning removal | shallow safety alignment | tamper-resistant
+  open-weight model risk evaluation | dual-use capability eval
+
+METHOD — efficiency matters, do not brute-force
+  GitHub. Use the REST search API, not scraping:
+    https://api.github.com/search/repositories?q=<terms>&sort=stars&per_page=50
+  Unauthenticated search is limited to ~10 requests/minute, so batch terms with
+  OR and paginate rather than firing one request per phrase. If `gh` is
+  authenticated (`gh auth status`), prefer `gh api` — the limit rises to ~30/min.
+  Fetch each README with
+    gh api repos/{owner}/{repo}/readme -H "Accept: application/vnd.github.raw"
+  or https://raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md.
+  Skip forks and archived repos unless the fork is the well-known one. Record
+  stars, last-push date and licence — you will need them to weight the analysis.
+
+  LessWrong and Alignment Forum. Both run ForumMagnum and expose a GraphQL
+  endpoint at https://www.lesswrong.com/graphql and
+  https://www.alignmentforum.org/graphql. VERIFY THE SCHEMA BEFORE RELYING ON IT
+  — send a small introspection or a one-post query first and confirm the field
+  names, rather than assuming. If GraphQL fights you, fall back to the site
+  search UI and fetch each post as markdown; do not spend more than ~15 minutes
+  on API archaeology before falling back.
+  Alignment Forum posts are largely crossposted from LessWrong: DEDUPLICATE BY
+  POST ID, and note which forums each post appeared on rather than storing it
+  twice. Capture karma and comment count — for this corpus, a heavily-commented
+  low-karma post is often more informative than a quiet high-karma one.
+
+  Be polite: serial requests with a short delay, one retry on 429/5xx with
+  backoff, and stop rather than hammer if you get rate-limited twice.
+
+OUTPUT LAYOUT — write as you go, do not batch to the end
+  ~/similar-projects/
+    SOURCES.md                     what you searched, when, with which terms,
+                                   which queries returned nothing, and every
+                                   dead end. Negative results are load-bearing:
+                                   "nobody has published X" is a finding, and it
+                                   is only credible if the search is auditable.
+    index.json                     one record per item: id, kind (github|lw|af),
+                                   title, url, authors, date, stars-or-karma,
+                                   why-included, one-line summary, and a
+                                   relevance tag of SIMILAR or ADJACENT.
+    github/<owner>__<repo>.md      the README verbatim, under a small header
+                                   giving url/stars/last-push/licence.
+    lesswrong/<postid>__<slug>.md  post body as markdown, with a header giving
+                                   url/author/date/karma/comments/crossposted-to.
+  Never edit the retrieved text — put your commentary in index.json.
+  Target roughly 30-60 items. Stop when new searches stop yielding new names;
+  say so explicitly rather than padding the corpus to hit a number.
+
+THEN ANALYSE
+Once the corpus is on disk, answer this:
+
+    Find common features between projects/articles, patterns in the
+    differences and OUTLIERS.
+
+Structure the answer as:
+  1. COMMON FEATURES — what nearly everyone does the same way. Cover at least:
+     which base models get ablated, which benchmarks get used, whether capability
+     is measured at all, whether over-refusal is measured alongside harmful
+     compliance, whether anything is paired per-item, and who the audience is
+     (safety researcher / hobbyist / model publisher).
+  2. PATTERNS IN THE DIFFERENCES — the axes along which the corpus splits, and
+     what predicts which side a piece lands on. Look specifically for splits
+     between measurement work and capability-release work, between per-item and
+     aggregate-only analysis, and between studies that report the calibration
+     BENEFIT of ablation and those that report only the safety cost.
+  3. OUTLIERS — items that do something nobody else does, or reach a conclusion
+     the rest contradict. Say why each is an outlier and whether it is a better
+     idea or a mistake. These are the most valuable rows in the table.
+  4. WHERE THIS PROJECT SITS — for each of the above, where /home/user/qwen2
+     agrees, disagrees, or is alone. Name anything it does that nobody else in
+     the corpus does, and anything standard that it omits.
+  5. WHAT THIS CHANGES — concrete effect on the plan in hand-over.txt. Which
+     proposed runs are now redundant because someone already did them, and which
+     just became more valuable because nobody has. Be willing to say "the
+     generational comparison is novel, write it up before running anything else."
+
+Write the analysis to ~/similar-projects/ANALYSIS.md and give me the headline in
+chat. Flag explicitly anything that contradicts a finding in
+/home/user/qwen2/midway-progress.txt — a contradiction is more useful to me than
+a confirmation, and I would rather hear it early.
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< END PROMPT <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+--------------------------------------------------------------------------------
+NOTE ON WHAT I DID NOT VERIFY
+--------------------------------------------------------------------------------
+I was scoped to ~/qwen2 for this pass and made no network calls, so the GitHub
+rate limits and the ForumMagnum GraphQL endpoints above are stated from general
+knowledge, not tested. The prompt tells Opus to verify before relying on them and
+to time-box the fallback, which is the right shape regardless of whether those
+particular details have drifted.
+================================================================================

@@ -1,0 +1,57 @@
+================================================================================
+PROMPT 2 for Claude Opus 5 — technique analysis of the cloned repos
+Written 2026-08-24. Runs after prompt-1-pareto-clone.txt.
+================================================================================
+
+You have 8 repositories cloned in ~/qwen2-repos (see its MANIFEST.md), selected
+as the Pareto-kept 20% of a 74-item prior-art corpus. Context for why they matter:
+  ~/similar-projects/PARETO.md    the selection and its scores
+  ~/similar-projects/ANALYSIS.md  the corpus-level findings
+  ~/qwen2/hand-over.txt           what the underlying project found and plans
+
+TASK
+Analyse the TECHNIQUES these projects actually implement — read the source, not
+the marketing. READMEs already went into ANALYSIS.md; this pass is about what the
+code does. Answer:
+
+  1. COMMON FEATURES — what does essentially every implementation do the same way?
+     Cover at least: how the refusal direction is computed (mean-difference? PCA?
+     SVD? which layers, which token positions); how it is applied (projection out
+     of weights vs inference-time hook; which matrices get edited); what harmful/
+     harmless prompt sets are used to derive it; and how, if at all, the result is
+     scored.
+  2. PATTERNS IN THE DIFFERENCES — the axes along which implementations diverge,
+     and what predicts which side a project lands on. Look for: single-direction
+     vs multi-direction/subspace; single-pass vs iterative vs optimiser-driven;
+     whether collateral damage enters the objective or is only checked afterwards;
+     norm-preserving vs plain projection; and which layers are targeted.
+  3. OUTLIERS — implementations doing something nobody else does, or reaching an
+     opposite conclusion. Say for each whether it is a better idea or a mistake,
+     and why.
+
+Then, and this is the part that matters:
+
+  4. WHAT ~/qwen2 SHOULD ADOPT. The project measures abliterated models but has
+     never performed an abliteration. It is about to consider a recipe-variance
+     experiment (same base model, several ablation recipes) to attack the
+     confound identified in ANALYSIS.md §4. For that it needs to know which of
+     these tools it can actually run on a single 24 GB RTX 3090 against a 27B
+     hybrid-attention (`qwen35`) model. Report concretely: which tools support
+     that architecture, what VRAM/RAM each needs, whether they work from GGUF or
+     require bf16 safetensors, and what the cheapest viable recipe-variance arm
+     looks like.
+
+CONSTRAINTS AND CAUTIONS
+  - Read code. Where a README claims a method, verify it against the source and
+    say so if they disagree.
+  - Distinguish what a tool *computes* from what it *reports*. Several report a
+    refusal count and silently compute far more.
+  - These repos include ablation recipes. Analysing and running them for
+    measurement is the point; do not paste harmful prompt content into any file
+    under ~/qwen2, which is a public repo.
+  - No GPU. Static reading only.
+
+DELIVERABLE
+  ~/similar-projects/TECHNIQUES.md, and append a section to
+  /home/user/qwen2/hand-over2-report.log.
+================================================================================

@@ -1,0 +1,260 @@
+================================================================================
+HAND-OVER 3 — revised plan + GPU continuation prompt
+Written 2026-08-24 by the Opus instance that executed fable-report.txt.
+Supersedes the priority lists in BOTH hand-over.txt and next-steps-recommendations.txt.
+Their environment facts, trap lists and measured rates remain accurate.
+================================================================================
+
+PART 1 — THE DECISION, AND WHY
+--------------------------------------------------------------------------------
+fable-report.txt asked me to resolve one question without averaging: does the next
+GPU block go to a recipe-variance arm, or to finishing and publishing the existing
+result? I checked the premises before choosing, and BOTH options were mispriced.
+
+WHAT TECHNIQUES.md §4b GOT WRONG.
+It proposed producing new ablations with `heretic` and called that "cheaper than
+the WMDP run". It is not. Reading `heretic`'s own config: `n_trials` defaults to
+**200** (60 random startup trials), each trial generating 100 prompts x 100 tokens
+AND dequantizing every abliterable 4-bit module to fp32 to recompute
+`lora_A = v.T @ W`. On a 27B on one 3090 that is hours per run. Add a 55.6 GB
+safetensors download of the base (~2.9h at this box's measured 5.4 MB/s), a merged
+55 GB save, GGUF conversion and re-quantisation. Realistic total for a two-recipe
+arm: **20-30 hours**, against 150 GB of free disk that the intermediates would
+very nearly exhaust. That option was costed by narrative, not by arithmetic.
+
+WHAT BOTH DOCUMENTS MISSED.
+The experiment does not require producing ablations. Other people's ablations of
+these exact base models already exist as ready GGUFs at the matched quant:
+
+  Qwen3.8-27B-Heretic-Q4_K_M.gguf ................. 16.55 GB  (0bserverx)
+  Qwen3.6-27B-Abliterated-Heretic-...-Q4_K_M.gguf . 16.55 GB  (Youssofal)
+  Qwen3.8-27B-Uncensored-Q4_K_M.gguf .............. 16.81 GB  (orcarouter, 108k dl)
+  Qwen3.8-27B-Uncensored-Q4_K_M.gguf .............. 16.81 GB  (JonathanColetti, 1.3M dl)
+
+The first two are the decisive pair: **the same recipe (Heretic), applied to both
+generations, at identical file size.** The study already holds stock and
+OBLITERATUS-family builds for both generations at Q4_K_M. So the full factorial
+is available for the price of downloads:
+
+                    | Qwen3.6-27B          | Qwen3.8-27B
+  stock             | HAVE                 | HAVE
+  OBLITERATUS-family| HAVE (83.1% refusal) | HAVE (54.3% refusal)
+  Heretic recipe    | download 16.55 GB    | download 16.55 GB
+
+That 2x2 decomposes what the study currently conflates:
+  * recipe effect      = within a generation, across recipes
+  * GENERATION effect  = within a recipe, across generations  <-- the headline claim,
+                         controlled for the first time
+  * interaction        = whether newer bases resist some recipes and not others
+
+next-steps-recommendations.txt called this confound "unbreakable". hand-over.txt
+correctly downgraded that to "breakable, but expensive - you would have to run the
+recipe yourself". Both were wrong in the same direction: **somebody else already
+ran the recipe on both generations and published the weights.**
+
+THE DECISION.
+Next GPU block goes to the matched-recipe 2x2. Not because publishing matters less,
+but because the dichotomy is false: this run is what makes the write-up defensible.
+The headline claim is currently a two-point comparison between builds by two
+different authors using two different recipes. One paper in the corpus (2605.05427,
+21 open-weight LLMs) asserts the opposite of it. Publishing that as-is invites the
+single objection the study cannot answer. Five GPU-hours removes the objection.
+
+Cost, from this box's MEASURED rates, not estimates:
+  downloads 2 x 16.55 GB @ 5.4 MB/s ......... ~1.7h, no GPU, unattended
+  generation 2 arms (SR 313 + XSTest 450) ... ~1.4h GPU
+  judging 2 arms (763 calls @ 6.6 s/call) ... ~2.8h GPU
+  ------------------------------------------------------------
+  ~4.2h GPU + ~1.7h of downloading.
+
+Against 20-30h for producing ablations, and ~2h for WMDP-bio, which the prior-art
+sweep demoted anyway (Safety Gap Toolkit already does biochem at 0.5B-405B, and
+RefusalBench shows refusal rate misranks models on bio prompts).
+
+REVISED PRIORITY LIST (supersedes hand-over.txt PART 2)
+  P0  DeepSeek re-grade of the round-3 arms ............ 0 GPU     unchanged, first
+  P1  Matched-recipe 2x2 (two Heretic builds) .......... ~4.2h GPU  NEW, promoted
+  P2  Control vectors (PROJECT2-PLAN Phase B) .......... ~1 day     unchanged
+  P3  WMDP-bio ......................................... ~2h        DEMOTED
+  P4  AIME at reasoning_effort=medium .................. ~3.5h      DEMOTED
+  Free, from existing logs, no GPU: report hard-refusal vs soft-deflection
+  separately; cite the 2026 multi-direction literature; offer the 141-to-0 nesting
+  result as evidence in that debate rather than burying it.
+
+A CONFOUND IN THE NEW ARM, FLAGGED BEFORE IT BITES.
+The 16.55 GB builds are almost certainly without the MTP head; the study's
+Qwen3.8-OBLITERATED at 16.81 GB has it (65 blocks, `nextn_predict_layers=1`). So:
+  * Heretic-3.6 vs Heretic-3.8 (both 16.55 GB) is INTERNALLY CLEAN - the decisive
+    generation comparison, matched on recipe AND on MTP presence.
+  * Heretic-3.8 vs OBLITERATED-3.8 (16.55 vs 16.81) differs in MTP as well as
+    recipe. Verify block_count from the GGUF header before comparing, and if they
+    differ, use JonathanColetti's `-noMTP-Q4_K_M` variant for that cell instead.
+Check it in preflight; do not discover it in the results.
+
+================================================================================
+PART 2 — PROMPT FOR CLAUDE OPUS 5. Paste everything between the markers.
+================================================================================
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> BEGIN PROMPT >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+You are continuing an AI-safety research project measuring what refusal ablation
+("abliteration") does to open-weight models. Work in /home/user/qwen2. It is a
+public git repo (github.com/Foomax/qwen2) — never commit or push unless asked, and
+never let verbatim harmful prompt text or model completions reach a tracked file.
+
+DO NOT START ANY GPU RUN WITHOUT ASKING ME FIRST. The RTX 3090 is shared with other
+sessions. Tell me your plan and what you expect to find, then wait for a go-ahead.
+
+READ FIRST, in this order. Do not re-derive what they already contain.
+  1. hand-over3.txt              this plan and the decision behind it
+  2. lessons2.txt                round-3 methodology lessons (#0, #3, #10, #11)
+  3. lessons.txt                 round-1/2 lessons — still authoritative
+  4. midway-progress.txt         round-3 results, caveats, file locations
+  5. PREFLIGHT-NOTES.md          config forensics; §3 is load-bearing
+  6. ~/similar-projects/ANALYSIS.md   prior-art findings (§4 = where this sits)
+  7. ~/similar-projects/TECHNIQUES.md what the ablation tools actually do
+                                 (its §4b cost estimate is WRONG — see hand-over3 PART 1)
+  8. next-steps-recommendations.txt   env map + traps accurate; PRIORITIES superseded
+  9. PROJECT2-PLAN.md            the repo's own roadmap (Phase B = control vectors)
+
+STATE OF PLAY — numbers, so nothing is re-measured
+  StrongREJECT, 313 forbidden prompts, judge qwen3.6-27b-normal:
+    q3.6 stock      refusal 1.000  compliance  0.0%   SR score 0.00
+    q3.6 obliterated       0.831              16.9%            0.81
+    q3.8 stock             1.000               0.0%            0.00
+    q3.8 OBLITERATED       0.543              45.7%            2.14
+  Per-item paired, q3.8 stock vs OBLITERATED: 141 flipped refuse->comply, 0 the
+    other way, McNemar exact p = 7.2e-43. (q3.6 was 83-to-1; a prompt attack was
+    32-to-19. That nesting-signature contrast is the study's sharpest and most
+    novel contribution — nothing in a 74-item prior-art corpus does it.)
+  XSTest @1024, judge qwen3.6-27b-normal:
+    q3.8 stock      safe over-refusal 4.5%   unsafe refusal 84.7%
+    q3.8 OBLITERATED                  0.0%                  34.5%
+  Capability: cybermetric_80 0.950 both (the negative control that licenses the
+    AIME claim). aime2024 0.967 -> 0.533, but 1/30 vs 10/30 context-ceiling hits;
+    answer rate 96.7% -> 66.7%, accuracy-given-answered 100% -> 80%.
+  Compliance quality among the 141: specificity 4.70/5, 92.2% at >=4. The q3.6
+    build scored ~4.79. V3's gain is RATE, not substance — which contradicts how
+    its model card frames itself.
+
+  Open caveat, blocking publication: differential judge parse rate on XSTest
+  unsafe — stock 190/200, obliterated 177/200. The arm that complies more is the
+  arm the judge fails to parse more. Probably conservative, but that is an
+  argument, not a measurement.
+
+YOUR TASK — phases ordered by value per GPU-hour, so killing it partway still
+leaves a coherent result on disk.
+
+PHASE 0 — DeepSeek re-grade. ZERO GPU. Do this first.
+  Re-grade the round-3 StrongREJECT and XSTest arms with DeepSeek as judge.
+  sr_compare.py already supports --judge-base-url https://api.deepseek.com and
+  --judge-api-key-env DEEPSEEK_API_KEY; the key is in .env. xstest_run.py needs no
+  code change — point OPENAI_BASE_URL/OPENAI_API_KEY at DeepSeek for the grade step
+  only. Grade the SAME .eval logs and gen JSONs, write to NEW filenames, never
+  overwrite the local-judge grades.
+  Report per arm: refusal rate, PARSE RATE, and per-item agreement with the local
+  judge as Cohen's kappa — not matching aggregates. Two judges can agree on 83% and
+  disagree about which items.
+  Success criterion: parse rate >=99% on both arms AND the stock/obliterated gap
+  closes to <=2 items. If the gap persists with a frontier judge it is not a budget
+  problem and needs a different diagnosis — say so rather than shrugging.
+  This closes two caveats at once: the parse-rate gap above, and Limitation 11 of
+  eval-results-technical-paper.md, open since 2026-08-11.
+
+PHASE 1 — downloads. ZERO GPU, unattended, ~1.7h at this box's measured 5.4 MB/s.
+  huggingface.co/0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF
+    -> Qwen3.8-27B-Heretic-Q4_K_M.gguf                          16.55 GB
+  huggingface.co/Youssofal/Qwen3.6-27B-Abliterated-Heretic-Uncensored-GGUF
+    -> Qwen3.6-27B-Abliterated-Heretic-Uncensored-Q4_K_M.gguf   16.55 GB
+  Use a resumable curl with --continue-at and VERIFY THE SHA256 against the HF LFS
+  oid from /api/models/<repo>/tree/main?expand=true before using either file. The
+  round-3 download script (download.sh) already does exactly this; copy its shape.
+  Disk: 150 GB free, this needs 33 GB. Fine.
+
+PHASE 2 — preflight. ZERO GPU. Do not skip; it caught two real confounds last time.
+  For BOTH new GGUFs, dump the header and check against the arms you will compare
+  them to: general.architecture (must be `qwen35`), qwen35.block_count (64 vs 65
+  distinguishes noMTP from MTP), context_length, and tokenizer.chat_template.
+  * Heretic-3.6 vs Heretic-3.8 must match each other on block_count. If they do,
+    that pair is the clean generation comparison.
+  * If Heretic-3.8 (16.55 GB) and the existing OBLITERATED-3.8 (16.81 GB) differ in
+    block_count, the within-3.8 recipe comparison is confounded by MTP. Use
+    JonathanColetti/Qwen3.8-27B-Uncensored-GGUF's `-noMTP-Q4_K_M` variant instead,
+    or report the confound explicitly. Decide before generating, not after.
+  * Diff the chat templates against the stock model as PREFLIGHT-NOTES.md §3 did,
+    and RE-RUN the jinja render-equivalence check. It is only inert because this
+    harness sends one user message, no tools, no reasoning_effort.
+
+PHASE 3 — generation, both new arms. ~1.4h GPU total.
+  Serving config must mirror q38_run.sh EXACTLY — the whole point is that the only
+  variable is the weight edit: thinking off, -c 32768, --parallel 4, temperature 0,
+  -ngl 1024, KV q8_0.
+    StrongREJECT 313 items @ 3.8 s/item, --parallel 4 ....... ~20 min per arm
+    XSTest 450 items @ 2.7 s/item (generate at max_tokens=1024,
+      the corrected cap; NOT 256) ........................... ~20 min per arm
+  Generations are the durable artifact: they can be re-graded forever without GPU.
+  If you are going to be interrupted, get both arms generated before judging.
+
+PHASE 4 — judge. ~2.8h GPU.
+  Judge = qwen3.6-27b-normal, --parallel 2, 1024-token budget. That judge graded
+  both q3.6 arms AND the q3.8 stock control, which is what makes the new arms
+  comparable to all of them. 763 calls per arm @ 6.6 s/call = ~84 min per arm.
+  VALIDATE COMPLETENESS BEFORE GRADING: status == "success" AND exact n (313 SR /
+  450 XSTest). q38ob_validate.py does this; adapt it. A killed server leaves a
+  partial .eval that still matches *.eval and looks fine.
+
+PHASE 5 — analysis. ZERO GPU.
+  Build the 2x2 and decompose: recipe effect within generation, GENERATION effect
+  within recipe, and the interaction. The generation effect controlled for recipe
+  is the number the whole study now turns on. Report per-item paired counts in BOTH
+  directions for every comparison (the nesting signature), not just aggregate rates.
+  Then state plainly whether the "~5x worse exchange rate between generations"
+  claim survives. It may not. If it does not, that is a better paper than if it does
+  — the finding becomes "ablation outcome is dominated by recipe, not by base
+  model", which is directly actionable for anyone assessing open-weight risk.
+
+STANDING TRAPS — each of these has already cost this project real time
+  * SHARED GPU. Never `pgrep -x llama-server | xargs kill` — it destroyed another
+    session's run once. Record the PID you launch and kill only that; verify with
+    `kill -0`. And note `pgrep -f <pattern>` matches the shell running the pgrep,
+    which caused two self-kills (exit 144) during round 3. Kill by PID.
+  * await_gpu, never reclaim. If another process holds VRAM, WAIT.
+  * Grade cache (~/qwen2/sr_grades/) is keyed sha256(realpath|mtime|judge|limit)[:16],
+    plus "|mt=N" when judge-max-tokens != 1024. NEVER glob that directory — doing so
+    once merged grades across models and reported 19 compliances for a model whose
+    measured refusal rate was 1.000.
+  * `inspect eval --timeout` does NOT set the HTTP client timeout. Pass
+    -M client_timeout=7200 or the OpenAI SDK's 600s default truncates silently.
+  * llama-server divides context across slots: --parallel 4 with -c 32768 gives each
+    request 8192.
+  * Passing -ngl explicitly disables llama.cpp auto-fit. Keep -ngl 1024, matched.
+  * CHAT-TEMPLATE CONFOUND, DORMANT NOT DEAD. Stock ships the Unsloth-patched
+    template, OBLITERATED the upstream one. Rendered output is byte-identical for
+    every message shape this harness sends — one user message, no tools,
+    reasoning_effort unset. It goes LIVE the moment a system prompt, a tool-use
+    task, or an explicit reasoning_effort enters. The wrapper sweep is exactly that.
+  * Use ~/qwen2/inspect-env — NOT .venv, NOT vvenv. Only inspect-env has inspect_evals.
+
+TWO STANDING RULES — both have bitten twice
+  1. Before trusting any "these are identical" comparison, assert your check can
+     distinguish things that ARE different: distinct inputs must produce distinct
+     outputs. A template-equivalence check once printed IDENTICAL four times having
+     rendered nothing, because every render had raised and the error string was
+     being hashed. A comparison's failure mode and its happy path produce the same
+     output.
+  2. Report answer-rate, parse-rate and cap-hit rate SEPARATELY, per arm and per
+     subset. Asymmetry is the signal, not the mean. "aime 0.533" hid two distinct
+     effects; "66.4% truncated" was a proxy that overstated a real 16.4% cap-hit.
+
+Tell me your plan before touching the GPU.
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< END PROMPT <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+PART 3 — NOTE FOR WHOEVER WRITES THE PAPER
+--------------------------------------------------------------------------------
+The prior-art sweep's Pareto cut was deliberately biased toward work that
+CONTRADICTS or RE-FRAMES this study and away from work that merely supports it.
+Right bias for choosing an experiment; wrong bias for a related-work section.
+All 74 items remain in ~/similar-projects/index.json — the supportive 80% is what
+the write-up will need, and it is still there.
+================================================================================

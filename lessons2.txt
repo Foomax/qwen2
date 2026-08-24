@@ -1,0 +1,191 @@
+================================================================================
+LESSONS 2 — from the Qwen3.8 stock vs OBLITERATED replication
+Compiled 2026-08-24. Companion to ~/qwen2/lessons.txt, which still holds.
+These are the ones that round did not already teach, plus two it taught again
+in a new shape.
+================================================================================
+
+THE ONE THAT MATTERS MOST THIS TIME
+--------------------------------------------------------------------------------
+A COMPARISON REPORTS "IDENTICAL" WHETHER OR NOT IT COMPARED ANYTHING.
+
+lessons.txt opens with "a harness reports a number whether or not it measured
+anything." The comparison version is worse, because its failure mode and its
+happy path produce the SAME output.
+
+Checking whether the two models' chat templates differ, I rendered both under
+four message shapes and diffed. All four printed IDENTICAL. They were identical:
+every render had raised on an undefined `tools` variable, the exception was
+caught into a string, and I was hashing the error text. Four "identical" results
+from zero renders.
+
+The fix is a sanity gate, and it is two lines: before trusting "same", assert
+that the check can tell apart things that ARE different. Distinct inputs must
+produce distinct outputs.
+
+    per_case = {c: sha256(render(c, arm_a)) for c in cases}
+    assert len(set(per_case.values())) == len(cases), "check is broken, not equal"
+
+Corollary: "no difference" needs a positive control the way "a difference" needs
+a negative one. Null results from an un-gated comparison are worthless.
+
+--------------------------------------------------------------------------------
+1. IN A PAIRED STUDY, ARTEFACT SELECTION IS BOUND BY THE OTHER ARM
+--------------------------------------------------------------------------------
+The question "which GGUF for a 24 GB card" has a hardware answer (Q5_K_M, 18.2
+GiB, fits) and an experimental answer (Q4_K_M, because the stock arm is Q4_K_M).
+They differ, and the experimental answer wins. Quantisation is a variable in the
+experiment, not a download preference.
+
+Q5_K_M would also have broken the accepted serving config -- pilot 3 measured
+21.5 GB used / 2.6 GB free at Q4_K_M, and Q5_K_M is ~2.7 GB larger. The
+comparability argument and the capacity argument happened to agree; do not count
+on that. Check the other arm first, then the card.
+
+2. PROVENANCE DIFFERENCES MASQUERADE AS TREATMENT DIFFERENCES
+--------------------------------------------------------------------------------
+The two builds shipped DIFFERENT chat templates (9,993 vs 8,952 chars). That
+looks like an abliteration effect and is not: the stock GGUF carries the
+Unsloth-patched template, the obliterated one the upstream original. It is a
+packaging difference between two publishers.
+
+When two arms come from different uploaders, diff everything that ships
+alongside the weights -- chat template, declared sampling metadata, tokenizer,
+special tokens -- and classify each difference as TREATMENT or PROVENANCE before
+running. A provenance difference in a load-bearing file is still a confound; it
+is just not the one you are studying.
+
+3. "INERT" IS A CLAIM ABOUT THE CALL PATTERN, NOT ABOUT THE FILE
+--------------------------------------------------------------------------------
+The template difference was dismissed correctly -- rendered output is
+byte-identical for every message shape this harness sends. But it is inert only
+because the harness sends one user message, no tools, and never sets
+reasoning_effort. The divergent paths are developer-role handling, merged system
+messages, tool-call validation, and a 'high'->'xhigh' alias.
+
+Add a system-prompt condition and the confound goes live. The wrapper sweep is
+exactly that. So: record the SCOPE under which a confound was dismissed, next to
+the dismissal, and make re-checking it a precondition of the run that changes
+the scope. A caveat filed as "resolved" with no scope attached will be read as
+resolved forever.
+
+4. A PROXY FOR A DEFECT CAN OVERSTATE THE DEFECT
+--------------------------------------------------------------------------------
+I justified re-running XSTest at a larger cap with "66.4% of safe completions are
+truncated", measured by a completion-does-not-end-in-terminal-punctuation
+heuristic. Once the generator was instrumented to record finish_reason, the same
+heuristic read 25.6% on data whose true cap-hit was 16.4% -- roughly 1.6x
+inflation, because lists, code blocks and quotes legitimately end without a full
+stop.
+
+The decision (run both caps) was still right, and the correction moved the
+headline by about a point. But the number I argued from was not the number I
+claimed it was. Instrument the real signal before quoting the proxy; and if the
+proxy already drove a decision, restate the decision's basis rather than letting
+the stronger number stand.
+
+5. WHEN A CONFIG CHOICE IS CONTESTED AND GENERATION IS CHEAP, RUN BOTH
+--------------------------------------------------------------------------------
+"Match 256 for comparability" and "raise the cap because 256 is broken" were both
+defensible, and arguing it out would have produced a decision either way with no
+evidence. Running both cost ~1 extra hour of generation and settled it
+permanently: the correction moves over-refusal 3.3 -> 4.5 and changes no
+conclusion.
+
+The diff between the two configs is itself a result, and a reusable one -- it
+tells the next person how much the old cap cost. Generation is usually cheap
+relative to judging; spend there.
+
+6. ANSWER RATE AND ACCURACY ARE TWO MEASUREMENTS WEARING ONE NUMBER
+--------------------------------------------------------------------------------
+lessons.txt #10 says state what a number licenses. This round shows why it
+changes conclusions and not just wording.
+
+AIME 0.967 -> 0.533 reads as a reasoning collapse. Decomposed:
+    ran to the 65k ceiling, emitted nothing:  1/30  ->  10/30
+    answer rate:                             96.7%  ->  66.7%
+    accuracy GIVEN an answer:                 100%  ->  80%
+Two distinct effects. In the qwen3.6 round only convergence moved, so the drop
+was dismissible as a pathology. Here BOTH moved, which is a different finding.
+Reporting the single number would have hidden a real capability cost behind a
+known artefact -- in the direction of being too generous to the model.
+
+Always report: n, answered, correct-given-answered, and ceiling-hits.
+
+7. KEEP A TASK WHERE YOU EXPECT NO EFFECT
+--------------------------------------------------------------------------------
+cybermetric_80 came out 0.950 vs 0.950 -- identical to three decimal places.
+That null is what licenses the AIME claim: the pair is not globally degraded, so
+the AIME movement is task-specific rather than a broken server, a wrong template,
+or a bad quant.
+
+A cheap negative control costs 40 minutes and converts "the model got worse" from
+an assertion into a localised claim. Budget for one in every comparison.
+
+8. REPORT DISCORDANT PAIRS IN BOTH DIRECTIONS, ALWAYS
+--------------------------------------------------------------------------------
+Aggregate rates cannot distinguish mechanism. The paired counts can:
+    weight edit (q3.8 stock vs obliterated):   141 flipped one way, 0 the other
+    weight edit (q3.6):                         83 one way,         1 the other
+    prompt attack (refusal_suppression):        32 one way,        19 the other
+A near-perfectly nested split is a lowered threshold. A two-sided split is a
+perturbation whose headline gap is the NET of two larger opposing flows. Same
+shape of aggregate result, completely different mechanism.
+
+This is now three-for-three across the project. Make both counts a standard
+output of every paired comparison, not something computed when someone asks.
+
+9. WHEN A VENDOR CLAIM IS ABOUT A DISTRIBUTION, DO NOT TEST IT WITH A RATE
+--------------------------------------------------------------------------------
+The model card claims V3 eliminated "safety-lecture deflections" -- compliance
+with no substance. Testing that with a compliance RATE would have confirmed it
+trivially (compliance tripled).
+
+Conditioning on compliance and reading the specificity distribution says
+something else: quality is ~4.7/5 in BOTH builds, and only 5.7% of the new
+build's compliances are low-substance. The old build already answered
+substantively when it answered; it just answered 2.7x less often. The claimed
+improvement is in rate, and the card describes it as a change in kind.
+
+Vendor claims are free pre-registration. Take them literally, and match the
+statistic to the claim's grammar.
+
+10. PARSE RATE IS A RESULT, NOT A FOOTNOTE, WHEN IT CORRELATES WITH TREATMENT
+--------------------------------------------------------------------------------
+XSTest unsafe: stock parsed 190/200, obliterated 177/200. The arm that complies
+more is the arm whose judge verdicts fail to parse more -- because long compliant
+answers are what exhaust the judge. That is structurally coupled to the treatment
+being measured, which makes it the same family of bug as lessons.txt #3.
+
+The direction here is probably conservative (dropping compliances understates
+compliance), but "probably conservative" is an argument, not a measurement.
+Report parse rate per arm next to every judged number, and treat a differential
+that runs with the treatment effect as blocking until re-graded.
+
+11. `pgrep -f <pattern>` MATCHES THE SHELL RUNNING THE PGREP
+--------------------------------------------------------------------------------
+Killing the wrong download twice, with exit 144 both times, because
+`pgrep -f "download.sh"` matched my own command line -- the pattern appears in
+the argv of the very shell doing the matching, so the kill loop killed itself.
+
+lessons.txt #7 covers "never kill a server you did not start". This is the
+adjacent trap: never kill by pattern at all if you can avoid it. Record the PID
+at launch and kill that. If you must match, exclude $$ and $PPID, or use
+`pgrep -f -- "$pat" | grep -v "^$$\$"`. Verify with `kill -0` afterwards rather
+than trusting the loop.
+
+12. SEPARATE THE QUEUE FROM THE RUN, AND ORDER PHASES SO A KILL IS SURVIVABLE
+--------------------------------------------------------------------------------
+Two process-level things that worked and are worth keeping:
+
+* The waiter (queue_replication.sh) was a DIFFERENT FILE from the orchestrator
+  (q38ob_run.sh), launched with setsid so it survived the session. Because bash
+  does not parse the orchestrator until `exec`, the whole download window stayed
+  available for editing the plan. lessons.txt #7 says edits do not reach a
+  running script; this is how you buy time before that becomes true.
+* Phases were ordered by value per GPU-hour -- refusal core first, the 3.5h AIME
+  run last -- so killing the job at any point would still have left a coherent,
+  complete result on disk rather than a half-populated table.
+
+Both are free. Do them by default on any run longer than an hour.
+================================================================================

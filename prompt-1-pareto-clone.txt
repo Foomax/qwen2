@@ -1,0 +1,60 @@
+================================================================================
+PROMPT 1 for Claude Opus 5 — Pareto 80/20 + clone
+Written 2026-08-24. Executed by the Opus instance that built the corpus.
+================================================================================
+
+Read /home/user/similar-projects/ANALYSIS.md, SOURCES.md and index.json (74
+items: 49 GitHub READMEs, 10 LessWrong/Alignment Forum posts, 15 arXiv abstracts),
+plus /home/user/qwen2/hand-over.txt for what the underlying project actually found.
+
+TASK
+Run a Pareto 80/20 analysis over the 74 items and keep the strongest, most
+relevant ~20% (target 14-16 items). Then clone the GitHub repos among the kept
+set into ~/qwen2-repos.
+
+SCORING — score every item 0-5 on each axis, and record the numbers, not just the
+verdict, so the ranking is auditable:
+  RELEVANCE   how directly does it bear on "what does refusal ablation do to a
+              model, and how would you measure it?"
+  RIGOUR      does it measure anything, with what n, and does it report
+              uncertainty / validate its judge / analyse per item?
+  LEVERAGE    if ~/qwen2 read or ran this, would it change the next experiment
+              or the write-up? Prior art that only confirms is worth less than
+              prior art that contradicts or supplies a method.
+  UNIQUENESS  does it do something the other 73 do not? Penalise the long tail of
+              near-identical abliteration scripts - keep the best exemplar, drop
+              the clones.
+Weight LEVERAGE and UNIQUENESS highest: the point is to keep what changes the
+research, not what is most popular. Star count is evidence of adoption, not of
+quality - `mkzung/lm-refusal-eval` has 0 stars and is the only project in the
+corpus that validates its judge against hand labels.
+
+MUST KEEP unless you can argue otherwise in writing:
+  - elder-plinius/OBLITERATUS      primary source: made the model under study
+  - p-e-w/heretic                  the field's reference tool; refusal-vs-KL table
+  - arXiv 2512.13655               closest published analogue; the maths-sensitivity result
+  - arXiv 2602.02132               "shared one-dimensional knob"; corroborates the central claim
+  - arXiv 2605.05427               contradicts the generational finding; 21 models
+  - arXiv 2507.11544               Safety Gap Toolkit; the institutional version of this project
+  - the same-base-model rival ablations (AEON-7 Qwen3.6, Wassimyounes01/orcarouter
+    Qwen3.8) - they are the evidence for the recipe-variance problem
+
+DELIVERABLES
+  1. ~/similar-projects/PARETO.md — the scored table for ALL 74 (so exclusions are
+     auditable), the kept set with a one-line justification each, and an explicit
+     "what we lose by dropping the other 80%" paragraph. Do not pretend the cut
+     is free.
+  2. Clone the kept GitHub repos into ~/qwen2-repos, shallow (`--depth 1`), one
+     directory per repo, and write ~/qwen2-repos/MANIFEST.md recording for each:
+     URL, commit SHA cloned, size on disk, licence, and why it was kept.
+     Skip any repo that is a model-weights mirror with no code - note it in the
+     manifest instead. Report total disk used before and after.
+  3. Append a section to /home/user/qwen2/hand-over2-report.log.
+
+CONSTRAINTS
+  - Do not delete anything from ~/similar-projects. The Pareto cut is a VIEW over
+    the corpus, not a deletion; the other 80% stays on disk.
+  - `--depth 1` only. Check total size as you go and stop at 2 GB, reporting what
+    you skipped, rather than filling the disk.
+  - No GPU. No git commits in ~/qwen2.
+================================================================================

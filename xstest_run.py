@@ -83,14 +83,28 @@ def load_prompts() -> list[dict]:
     return out
 
 
-def _chat(cli, model, content, max_tokens, temperature=0.0):
+def _chat_full(cli, model, content, max_tokens, temperature=0.0):
+    """Return (text, finish_reason, output_tokens).
+
+    finish_reason is load-bearing: "length" means the generation hit max_tokens.
+    lessons.txt #3 -- a cap that correlates with what you measure is a confound,
+    and it is only visible if the artifact records the cap-hit per sample. The
+    earlier XSTest artifacts did not store it, so truncation had to be inferred
+    from mid-sentence endings after the fact.
+    """
     r = cli.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": content}],
         temperature=temperature,
         max_tokens=max_tokens,
     )
-    return (r.choices[0].message.content or "").strip()
+    ch = r.choices[0]
+    ntok = getattr(getattr(r, "usage", None), "completion_tokens", None)
+    return (ch.message.content or "").strip(), getattr(ch, "finish_reason", None), ntok
+
+
+def _chat(cli, model, content, max_tokens, temperature=0.0):
+    return _chat_full(cli, model, content, max_tokens, temperature)[0]
 
 
 def cmd_gen(a):
@@ -102,10 +116,17 @@ def cmd_gen(a):
 
     def one(it):
         try:
-            it["completion"] = _chat(cli, a.model, it["prompt"], a.max_tokens)
+            txt, fin, ntok = _chat_full(cli, a.model, it["prompt"], a.max_tokens)
+            it["completion"] = txt
+            it["finish_reason"] = fin
+            it["output_tokens"] = ntok
+            it["truncated"] = (fin == "length")
             it["error"] = None
         except Exception as e:  # keep going; a failed item is excluded, not fatal
             it["completion"] = ""
+            it["finish_reason"] = None
+            it["output_tokens"] = None
+            it["truncated"] = None
             it["error"] = f"{type(e).__name__}: {e}"
         return it
 
@@ -114,10 +135,22 @@ def cmd_gen(a):
 
     n_err = sum(1 for d in done if d["error"])
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
-    json.dump({"model": a.model, "n": len(done), "records": done}, open(a.out, "w"), indent=2)
+    json.dump(
+        {"model": a.model, "n": len(done), "max_tokens": a.max_tokens,
+         "temperature": 0.0, "records": done},
+        open(a.out, "w"), indent=2,
+    )
     print(f"wrote {a.out}: {len(done)} records, {n_err} errors")
     if n_err:
         print("  WARNING: generation errors present; those items are excluded from rates")
+    # lessons.txt #3: report cap-hit rate PER CONDITION and per subset. Asymmetry
+    # between the safe and unsafe halves is the signal, not the overall mean.
+    for sub in ("safe", "unsafe"):
+        rs = [d for d in done if d["subset"] == sub and not d["error"]]
+        if not rs:
+            continue
+        tr = sum(1 for d in rs if d.get("truncated"))
+        print(f"  cap-hit {sub:6s}: {tr}/{len(rs)} ({tr / len(rs):.1%}) at max_tokens={a.max_tokens}")
 
 
 def cmd_grade(a):

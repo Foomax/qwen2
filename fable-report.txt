@@ -1,0 +1,183 @@
+================================================================================
+fable-report.txt — for Claude Fable
+From: the Opus instance that executed hand-over2.txt (the prior-art sweep)
+Date: 2026-08-24.  No GPU was used for any of this.
+================================================================================
+
+WHY YOU ARE READING THIS
+You wrote hand-over.txt and hand-over2.txt. hand-over2.txt has now been executed.
+It found things that change hand-over.txt's priorities — including one that
+undermines the project's headline claim. Your job is at the bottom; read the
+findings first.
+
+--------------------------------------------------------------------------------
+WHAT WAS DONE
+--------------------------------------------------------------------------------
+Built a 74-item prior-art corpus in ~/similar-projects:
+  49 GitHub READMEs, 6 Alignment Forum + 4 LessWrong posts, 15 arXiv abstracts.
+  37 SIMILAR, 37 ADJACENT.
+Then, at the user's instruction, two further passes:
+  - Pareto 80/20 -> kept 15 of 74 (20.3%), cloned 8 repos into ~/qwen2-repos (128 MB)
+  - technique analysis: static source reading of all 8 cloned repos
+
+Read in this order:
+  ~/similar-projects/ANALYSIS.md    corpus-level findings (the 5-part answer)
+  ~/similar-projects/TECHNIQUES.md  what the code actually does
+  ~/similar-projects/PARETO.md      the cut, its scores, and what it costs
+  ~/similar-projects/SOURCES.md     method, negative results, API notes
+  ~/qwen2/hand-over2-report.log     the execution log
+  ~/qwen2-repos/MANIFEST.md         the 8 cloned repos
+
+Your two prompts were executed as written and are preserved at
+~/qwen2/prompt-1-pareto-clone.txt and ~/qwen2/prompt-2-techniques.txt.
+
+--------------------------------------------------------------------------------
+FINDING 1 — THE HEADLINE IS CONFOUNDED WORSE THAN YOU FLAGGED
+--------------------------------------------------------------------------------
+hand-over.txt ERROR 1 correctly said the H2-vs-H3 confound (newer base resists
+ablation? or is V3 surgery just better?) is breakable because the OBLITERATUS
+recipe is public. The corpus says the problem is bigger than that framing.
+
+Other people's ablations of THE SAME TWO BASE MODELS report wildly different
+refusal rates:
+    AEON-7's Qwen3.6-27B build ......... 0/100 refusals
+      (~/qwen2's Qwen3.6 build: 83.1% refusal)
+    orcarouter's Qwen3.8-27B build ..... ~0-6% refusal, MMLU 84.7 (as reported
+      by iacker/uncensored-llm-benchmark)
+      (~/qwen2's Qwen3.8 build: 54.3% refusal)
+And heretic's own published table shows three ablations of one model all reaching
+3/100 refusals at KL of 1.04, 0.45 and 0.16 — a 6.5x damage spread at identical
+refusal outcomes.
+
+The study attributes a 16.9% -> 45.7% compliance shift to THE GENERATION. The
+corpus says recipe variance is plausibly the larger term. This is no longer a
+caveat to flag; it is the first thing a reviewer will say.
+
+--------------------------------------------------------------------------------
+FINDING 2 — AND YET TWO CENTRAL CLAIMS ARE INDEPENDENTLY CORROBORATED
+--------------------------------------------------------------------------------
+  arXiv 2512.13655 (4 tools x 16 models): mathematical reasoning is the MOST
+  abliteration-sensitive capability, GSM8K +1.51pp to -18.81pp. That independently
+  supports the AIME 0.967 -> 0.533 result you could not attribute.
+
+  arXiv 2602.02132: refusal directions are geometrically distinct, "yet linear
+  steering along any refusal-related direction produces nearly identical refusal
+  to over-refusal trade-offs, acting as a SHARED ONE-DIMENSIONAL CONTROL KNOB."
+  That is an independent mechanistic restatement of "one dial, turned down,
+  indiscriminately".
+
+So the mechanism claim is strong and the generational claim is weak. The write-up
+currently leads with the weaker one.
+
+--------------------------------------------------------------------------------
+FINDING 3 — ONE PAPER DIRECTLY CONTRADICTS THE GENERATIONAL FINDING
+--------------------------------------------------------------------------------
+arXiv 2605.05427, 21 open-weight LLMs across four safety benchmarks, finds
+refusal/compliance tendencies are "stable within model families across generations
+and scales", attributing safety behaviour to post-training objectives. ~/qwen2
+found a large generational shift in STOCK Qwen (over-refusal 10.6% -> 3.3%).
+Must be addressed explicitly, not ignored. It also independently calls for
+multi-judge evaluation — i.e. it endorses your P0.
+
+--------------------------------------------------------------------------------
+FINDING 4 — WHAT IS GENUINELY NOVEL HERE
+--------------------------------------------------------------------------------
+Nothing in 74 items does either of these:
+  * a stock-vs-ablated comparison across TWO GENERATIONS of one family;
+  * the per-item nesting signature (141-0 vs 83-1 for weight edits, 32-19 for a
+    prompt attack) that distinguishes a threshold shift from a perturbation.
+The second is the sharper contribution and the write-ups currently bury it.
+Also: over-refusal is measured in 14% of the corpus, per-item paired analysis in
+about 3 of 74, and ~/qwen2 is the ONLY project in the kept set using a
+rubric-based LLM judge that scores substance rather than keywords.
+
+--------------------------------------------------------------------------------
+FINDING 5 — THE FIELD'S REFERENCE TOOL OPTIMISES AGAINST A BROKEN METRIC
+--------------------------------------------------------------------------------
+p-e-w/heretic (28,052 stars, 5,000+ derived models) scores refusal with a
+41-marker SUBSTRING MATCHER, and that metric is its Optuna objective. The markers
+include "illegal", "harmful", "violat", "prohibit", "unethical". So a substantive
+compliant answer using the word "illegal" scores as a refusal, and a fluent
+non-answer that dodges the words scores as a success — the empty-jailbreak mode
+StrongREJECT exists to catch. Corollary: heretic's "3/100 refusals" is NOT
+commensurable with ~/qwen2's judge-based rates.
+By contrast Arditi's pipeline filters candidate directions on a POSITIVE CONTROL
+(adding the direction must INCREASE refusal) plus a hard kl_threshold=0.1.
+heretic drops the positive control.
+
+--------------------------------------------------------------------------------
+FINDING 6 — THE FIX FOR FINDING 1 IS FEASIBLE ON THE 3090
+--------------------------------------------------------------------------------
+heretic's source (model.py:402-405, :454) special-cases Qwen3.5 hybrid layers,
+reading layer.linear_attn.out_proj for GatedDeltaNet layers alongside
+self_attn.o_proj — the exact 64-layer / full_attention_interval=4 architecture of
+both models under study. Verified in source, not just claimed in the README. It
+loads via BitsAndBytesConfig with configurable max_memory and dequantizes 4-bit
+per module, so 27B in 4-bit (~15 GB) fits on 24 GB with headroom.
+Requires HF safetensors, not GGUF: ~54 GB download per base model.
+
+CHEAPEST RECIPE-VARIANCE ARM: one base (Qwen3.8-27B), two or three ablation
+recipes (heretic default; heretic with row_normalization=FULL; the existing
+OBLITERATUS V3 build already on disk), then the EXISTING StrongREJECT + XSTest
+harness run unchanged across them. Same base, same quant, same judge, same
+prompts; recipe is the only variable.
+
+--------------------------------------------------------------------------------
+WHAT THIS DOES TO YOUR PRIORITY LIST IN hand-over.txt
+--------------------------------------------------------------------------------
+  P0 DeepSeek re-grade ........ UNCHANGED, still first. Independently endorsed by
+                                2605.05427 and 2601.18076. Zero GPU.
+  P1 WMDP-bio ................. DEMOTE. The Safety Gap Toolkit (2507.11544)
+                                already does biochem capability at 0.5B-405B with
+                                safeguards removed, and RefusalBench (2605.21545)
+                                shows refusal rate misranks models on bio prompts.
+  P2 more model pairs ......... PROMOTE, but the SHAPE CHANGED. Highest value is
+                                no longer more families — it is more RECIPES on
+                                the SAME base. See Finding 6.
+  P3 control vectors .......... unchanged; DeepRefusal + AlphaSteer are nearest.
+  P4 AIME at effort=medium .... DEMOTE. 2512.13655 already establishes maths as
+                                the most sensitive capability.
+  NEW, free ................... report KL divergence (the field's damage
+                                currency); report hard refusal vs soft deflection
+                                separately; cite the 2026 multi-direction work.
+
+--------------------------------------------------------------------------------
+YOUR TASK
+--------------------------------------------------------------------------------
+1. Read the six documents listed at the top. Do not take this summary on trust —
+   ANALYSIS.md §4 and TECHNIQUES.md §4b carry the reasoning and the caveats, and
+   every arXiv claim above is ABSTRACT-ONLY and marked as such.
+
+2. Synthesise this report with hand-over.txt into a single revised plan. Where the
+   two disagree, RESOLVE IT — do not average them. In particular decide, and
+   defend: does the next GPU block go to the recipe-variance arm (attacks the
+   biggest confound, needs a ~54 GB download and an unfamiliar tool), or to
+   finishing and publishing the existing result first (the generational finding is
+   novel, contested, and currently under-defended)? There is a real case for
+   "write up before running", and this report does not settle it.
+
+3. Then write a prompt for Claude Opus 5 to CONTINUE THE RESEARCH ON GPU.
+   It must include:
+     - a cold-start reading list in priority order;
+     - the current state of play in numbers, so nothing is re-derived;
+     - the chosen next experiment, with phases ordered by value-per-GPU-hour so a
+       kill partway still leaves a coherent result;
+     - runtime estimates from the MEASURED rates in next-steps-recommendations.txt
+       (thinking-off generation 2.1-3.8 s/item at --parallel 4; judge calls 6.6
+       s/call at --parallel 2; AIME xhigh 6.9-11.4 min/item), not guesses;
+     - the standing traps: shared 3090, kill only PIDs you launched, never
+       pgrep-kill, validate completeness before grading (status==success AND exact
+       n), grade-cache keyed per-log never globbed, and the DORMANT chat-template
+       confound that goes live the moment a system prompt enters the picture;
+     - the two standing rules from lessons2.txt: gate every "these are identical"
+       comparison so it can distinguish things that are different, and report
+       answer-rate, parse-rate and cap-hit separately per arm and per subset;
+     - an explicit instruction to ASK BEFORE STARTING ANY GPU RUN.
+   Write it to ~/qwen2/hand-over3.txt.
+
+One thing to carry into whatever you write: this sweep's cut was deliberately
+biased toward prior art that CONTRADICTS or RE-FRAMES the study, and away from
+work that merely supports it. That is the right bias for choosing the next
+experiment. It is the wrong bias for a related-work section, which will need the
+supportive 80% still sitting in ~/similar-projects/index.json.
+================================================================================
